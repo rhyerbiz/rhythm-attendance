@@ -49,6 +49,10 @@ body {
   font-size: 13px;
   color: var(--brand);
 }
+.envbadge {
+  margin-left: 8px; padding: 2px 7px; border-radius: 6px;
+  background: var(--warn-soft); color: var(--warn-ink); letter-spacing: 0.04em;
+}
 main { max-width: 440px; margin: 0 auto; }
 
 .card {

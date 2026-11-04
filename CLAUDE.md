@@ -26,19 +26,26 @@ not the owner.
   so nobody fakes attendance.
 - **Later — kids' classes:** fobs on the totem; an instructor's phone carries the kids' taps.
 - **Later — Wix:** read the schedule and package purchases from the studio's Wix site (likely the
-  Core plan) instead of the Schedule tab. Read-only; never write bookings back.
+  Core plan) instead of the Schedule tab. Read-only; never write bookings back. The site uses
+  Fit by Wix, so classes are Wix Bookings services. Wix API keys can't be read-only, so
+  `wixRead_()` in Wix.gs allows only the read calls listed in `WIX_READS`. Every Wix call goes
+  through it. Key and site ID are in Script Properties (`wixApiKey`, `wixSiteId`). So far only
+  `wixTest` exists; it writes a "Wix preview" tab and nothing else.
 
 ## Layout
 
 ```
 apps-script/Logic.gs     the rules — pure JS, no Google services. Shared by all three below.
-apps-script/Code.gs      Sheet I/O, doPost API, owner menu, Dashboard, weekly email
+apps-script/Code.gs      Sheet I/O, doPost API, owner menu, Dashboard, weekly email, backups
+apps-script/Wix.gs       read-only Wix client (allow-listed calls) + "Test the Wix connection"
 apps-script/appsscript.json
 web/                     the check-in page, published to GitHub Pages (static, no build)
-  index.html, style.css, app.js, config.js (apiUrl; studioName is a first-visit fallback)
+  index.html, style.css, app.js, config.js (dev + prod host/apiUrl; studioName is a fallback)
   mock.js                preview-mode backend: runs Logic.gs in the browser
 scripts/test_logic.js    Node tests for Logic.gs
 scripts/serve.js         local preview server (serves .gs as JS)
+scripts/push.js          clasp push (+ redeploy) to the dev or prod Apps Script project
+deploy/dev.json, prod.json   clasp user, script ID and web app deployment ID per copy
 docs/SETUP.md            deployment and owner how-to
 ```
 
@@ -80,22 +87,33 @@ docs/SETUP.md            deployment and owner how-to
     may carry several `classIds`; ones already checked in come back as `already`.
 12. **The Sheet's `studioName` wins.** The page remembers the last name the API sent;
     `config.js` only covers a phone's first visit.
+13. **Backups:** `backupNow` (nightly trigger) copies the SCHEMA tabs — values only, no script —
+    into a Drive folder; keeps 30 days plus the first of each month; old ones are trashed, never deleted.
 
 ## Commands
 
 ```bash
 node scripts/test_logic.js      # run before every deploy
 node scripts/serve.js           # preview at http://localhost:8642/ (mock backend, no Google needed)
-clasp push                      # apps-script/ → the studio's Apps Script project
+node scripts/push.js dev|prod [--deploy]   # apps-script/ → that copy's Apps Script (clasp 3)
 ```
 
 The preview toolbar switches scenarios (one class / two at once / free class / none), adds a
 10-class pack, and forgets or resets the fake data.
 
+## Dev and prod
+
+Two identical copies: **dev** in the builder's Google/GitHub accounts, **prod** in the studio's.
+`web/config.js` lists both API URLs and the page picks by hostname (anything else = mock; `?dev`
+forces dev; dev shows a DEV badge). `deploy/<env>.json` holds the clasp user, script ID and web
+app deployment ID. Git remotes: `origin` = dev, `studio` = prod. Changes go to dev first.
+Prod is always deployed under the studio's clasp login, so it runs as the studio's account
+(`doGet` reports a masked `runsAs` to check).
+
 ## Versioning
 
 `APP_VERSION` lives at the top of Logic.gs (semver; currently 1.0.0). Bump it with each release
-and redeploy via **Manage deployments → New version** so the URL stays the same.
+and tag it in git. `push.js --deploy` redeploys the existing deployment, so the URL stays the same.
 
 ## Things to verify on real phones
 

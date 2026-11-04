@@ -7,7 +7,15 @@
 
   var CFG = window.CHECKIN_CONFIG || {};
   var params = new URLSearchParams(location.search);
-  var MOCK = !CFG.apiUrl || params.has('mock');
+  // Which backend: the studio's (prod) or the builder's test copy (dev), by the page's address.
+  var ENV = (function () {
+    if (params.has('mock')) return null;
+    var host = location.hostname;
+    if (CFG.prod && CFG.prod.host === host) return { name: 'prod', apiUrl: CFG.prod.apiUrl };
+    if (CFG.dev && (CFG.dev.host === host || params.has('dev'))) return { name: 'dev', apiUrl: CFG.dev.apiUrl };
+    return null;
+  })();
+  var MOCK = !ENV || !ENV.apiUrl;
   var CODE = { t: params.get('t') || '', s: params.get('s') || '' };
   var KEY = 'rhythm.student';
   var STUDIO_KEY = 'rhythm.studio';
@@ -42,7 +50,7 @@
   function api(req) {
     if (MOCK) return window.MockBackend.handle(req);
     // text/plain keeps this a "simple" request: no CORS preflight, which Apps Script can't answer.
-    return fetch(CFG.apiUrl, {
+    return fetch(ENV.apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(req),
@@ -317,6 +325,13 @@
 
   function start() {
     setStudio();
+    // Never mistake the test copy for the real one.
+    if (!MOCK && ENV.name === 'dev') {
+      var badge = document.createElement('span');
+      badge.className = 'envbadge';
+      badge.textContent = 'DEV';
+      document.querySelector('.top').appendChild(badge);
+    }
     var me = loadMe();
     if (me && me.email) checkin(me);
     else viewRegister({});

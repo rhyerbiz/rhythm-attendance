@@ -12,8 +12,11 @@ const TAB_KEYS = { Config: 'config', Schedule: 'schedule', Students: 'students',
 
 // ------------------------------------ web ------------------------------------
 
+/** Opening the /exec URL in a browser: a health check showing the version and, masked, which account it runs as. */
 function doGet() {
-  return json_({ ok: true, service: 'rhythm-attendance', version: APP_VERSION });
+  let runsAs = '';
+  try { runsAs = Session.getEffectiveUser().getEmail().replace(/^(.{2})[^@]*/, '$1***'); } catch (e) { /* not available */ }
+  return json_({ ok: true, service: 'rhythm-attendance', version: APP_VERSION, runsAs: runsAs });
 }
 
 /**
@@ -155,9 +158,11 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('Check-in')
     .addItem('Refresh dashboard', 'refreshDashboard')
     .addItem('Email me the weekly summary now', 'sendWeeklySummary')
+    .addItem('Back up now', 'backupNow')
     .addSeparator()
-    .addItem('Turn on the Monday-morning email', 'installWeeklyTrigger')
+    .addItem('Turn on the Monday email and nightly backups', 'installTriggers')
     .addItem('First-time setup', 'setup')
+    .addItem('Test the Wix connection (read-only)', 'wixTest')
     .addToUi();
   try { refreshDashboard(); } catch (e) { /* setup has not run yet */ }
 }
@@ -274,10 +279,62 @@ function sendWeeklySummary() {
   });
 }
 
-function installWeeklyTrigger() {
+/** The Monday email and the nightly backup. Safe to run again: it replaces its own triggers. */
+function installTriggers() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'sendWeeklySummary') ScriptApp.deleteTrigger(t);
+    if (['sendWeeklySummary', 'backupNow'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('sendWeeklySummary').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).create();
-  SpreadsheetApp.getActiveSpreadsheet().toast('The summary will arrive every Monday around 8am.');
+  ScriptApp.newTrigger('backupNow').timeBased().everyDays(1).atHour(2).create();
+  SpreadsheetApp.getActiveSpreadsheet().toast('The summary arrives Mondays around 8am; a backup is made every night around 2am.');
+}
+
+// ---------------------------------- backups ----------------------------------
+
+const BACKUP_FOLDER = 'Check-in backups';
+const BACKUP_KEEP_DAYS = 30;
+
+/**
+ * A dated copy of every data tab, in a "Check-in backups" Drive folder. Only
+ * values and formatting are copied, never the script, so a backup can be
+ * opened safely and never acts on its own. Keeps every backup from the last
+ * 30 days, and before that the first one of each month. A failed nightly run
+ * is emailed to the owner by Google.
+ */
+function backupNow() {
+  const ss = ss_(), tz = ss.getSpreadsheetTimeZone();
+  const copy = SpreadsheetApp.create(ss.getName() + ' — backup ' + Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm'));
+  copy.setSpreadsheetTimeZone(tz);
+  const blank = copy.getSheets()[0];
+  Object.keys(SCHEMA).forEach(function (tab) {
+    const sh = ss.getSheetByName(tab);
+    if (sh) sh.copyTo(copy).setName(tab);
+  });
+  if (copy.getSheets().length > 1) copy.deleteSheet(blank);
+  const folder = backupFolder_();
+  DriveApp.getFileById(copy.getId()).moveTo(folder);
+  pruneBackups_(folder);
+  try { SpreadsheetApp.getActiveSpreadsheet().toast('Backed up to the "' + BACKUP_FOLDER + '" folder in Drive.'); } catch (e) { /* nightly run: no sheet open */ }
+}
+
+function backupFolder_() {
+  const found = DriveApp.getFoldersByName(BACKUP_FOLDER);
+  return found.hasNext() ? found.next() : DriveApp.createFolder(BACKUP_FOLDER);
+}
+
+/** Old backups go to Drive's trash (recoverable for 30 days), never straight to deletion. */
+function pruneBackups_(folder) {
+  const cutoff = Date.now() - BACKUP_KEEP_DAYS * 24 * 60 * 60 * 1000;
+  const files = [];
+  const it = folder.getFiles();
+  while (it.hasNext()) files.push(it.next());
+  files.sort(function (a, b) { return a.getDateCreated() - b.getDateCreated(); });
+  const monthsKept = {};
+  files.forEach(function (f) {
+    const month = (f.getName().match(/ — backup (\d{4}-\d{2})-\d{2}/) || [])[1];
+    if (!month) return; // not one of ours
+    const firstOfMonth = !monthsKept[month];
+    monthsKept[month] = true;
+    if (f.getDateCreated().getTime() < cutoff && !firstOfMonth) f.setTrashed(true);
+  });
 }
