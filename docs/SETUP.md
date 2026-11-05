@@ -11,33 +11,33 @@ There are two copies, set up the same way:
 | Address | `<you>.github.io/rhythm-attendance` | `checkin.theirstudio.com` |
 | Tag / QR | a test sticker on your desk | the sign by the door |
 
-Set up dev first and try everything there. Then do it all again **in the studio's own accounts**
-(not yours) so the real system never depends on you. The code is the same; only
-`deploy/<copy>.json` and the two lines in `web/config.js` differ. Updates afterwards: see
-[Updating](#updating-dev-first-then-prod).
+**Steps 1–5 build your dev copy, entirely in your own accounts.** The studio isn't involved
+until it's working and you hand it over. Then you repeat the same steps in the studio's accounts
+with the owner (see [Handover](#handover-the-studios-copy)), so the real system never depends on
+you. The code is the same; only `deploy/<copy>.json` and one line of `web/config.js` differ.
+Updates afterwards: see [Updating](#updating-dev-first-then-prod).
 
 ## 1. The Sheet and the script
 
-1. Signed in as the studio's Google account, create a new Google Sheet named something like
+1. Signed in to **your** Google account, create a new Google Sheet named something like
    *Studio Check-ins*. Check **File → Settings → Time zone** is the studio's.
 2. **Extensions → Apps Script.** Copy the **Script ID** from **Project Settings** into
-   `deploy/dev.json` (or `deploy/prod.json`). Then, once per Google account, sign clasp in:
+   `deploy/dev.json`. Then sign clasp in to your account:
    ```bash
    npm install -g @google/clasp
-   clasp login --user dev       # your Google account (for dev)
-   clasp login --user studio    # the studio's Google account (for prod)
+   clasp login --user dev
    ```
-   If Apps Script refuses the push, turn on the Apps Script API for that account at
+   If Apps Script refuses the push, turn on the Apps Script API for your account at
    https://script.google.com/home/usersettings. Then push the code:
    ```bash
-   node scripts/push.js dev       # or prod
+   node scripts/push.js dev
    ```
-   (Without clasp: create `Logic.gs` and `Code.gs` in the editor and paste the files from
-   `apps-script/`. Turn on **Project Settings → Show "appsscript.json"** and paste that too.)
+   (Without clasp: create `Logic.gs`, `Code.gs` and `Wix.gs` in the editor and paste the files
+   from `apps-script/`. Turn on **Project Settings → Show "appsscript.json"** and paste that too.)
 3. In **Project Settings**, set the time zone to match the Sheet's (the manifest ships with
    `America/Chicago` as a placeholder).
-4. Select `setup` in the function dropdown and **Run**. Approve the permissions (it is the studio's
-   own script asking to use the studio's own sheet and send it email). This builds the tabs.
+4. Select `setup` in the function dropdown and **Run**. Approve the permissions (it's your own
+   script asking to use your own Sheet and send email). This builds the tabs.
 5. Back in the Sheet, fill in:
    - **Config:** `studioName`, `venmoHandle`, `dropInPrice`, `ownerEmail`. The check-in page
      picks up `studioName` from here — change it in the Sheet and phones show the new name from
@@ -50,49 +50,41 @@ Set up dev first and try everything there. Then do it all again **in the studio'
 
 ## 2. Deploy the API
 
-1. In Apps Script, signed in as that copy's account (for prod, **the studio's**):
-   **Deploy → New deployment → Web app**. *Execute as:* **Me**. *Who has access:* **Anyone**.
-2. Copy the URL ending in `/exec`, and copy the **Deployment ID** into `deploy/<copy>.json`.
+1. In Apps Script: **Deploy → New deployment → Web app**. *Execute as:* **Me**.
+   *Who has access:* **Anyone**.
+2. Copy the URL ending in `/exec`, and copy the **Deployment ID** into `deploy/dev.json`.
    Opening the URL in a browser should show `{"ok":true,"service":"rhythm-attendance",...}`.
-   For prod, check `runsAs` is the studio's account (masked, e.g. `rh***@gmail.com`), not yours.
 3. **Never create a second deployment** — it gets a new URL and the page would stop working.
-   Updates go through `node scripts/push.js <copy> --deploy`, which reuses the same one.
+   Updates go through `node scripts/push.js dev --deploy`, which reuses the same one.
 
 ## 3. Publish the check-in page
 
-1. In `web/config.js`, fill in that copy's `host` and `apiUrl` (the `/exec` URL). Both copies
-   live in the same file, and the page picks one by the address it is opened on. (`studioName`
-   there is only a fallback for a phone's very first visit; the Sheet's Config tab is the one
-   that counts.) Commit it.
-2. Create a **public** GitHub repository — yours for dev, one owned by the studio for prod
-   (GitHub Pages is free for public repos; nothing secret lives in the repo — the page has to
-   know the API URL anyway) — and push to it:
+1. In `web/config.js`, fill in `dev`'s `host` (`<you>.github.io`) and `apiUrl` (the `/exec`
+   URL). The `prod` line stays blank until handover; the page picks a copy by the address it is
+   opened on. (`studioName` there is only a fallback for a phone's very first visit; the Sheet's
+   Config tab is the one that counts.) Commit it.
+2. Create a **public** GitHub repository in your account (GitHub Pages is free for public repos;
+   nothing secret lives in the repo — the page has to know the API URL anyway) and push to it:
    ```bash
-   git remote add origin https://github.com/<you>/rhythm-attendance.git      # dev
-   git remote add studio https://github.com/<studio>/rhythm-attendance.git   # prod
-   git push -u origin main        # or: git push studio main
+   git remote add origin https://github.com/<you>/rhythm-attendance.git
+   git push -u origin main
    ```
 3. **Settings → Pages → Source: GitHub Actions.** The workflow in `.github/workflows/pages.yml`
    publishes `web/` on every push to `main`.
-4. **Prod only — custom domain**, so the URL on the sign is the studio's and outlives any hosting choice:
-   - In GitHub **Settings → Pages → Custom domain**, enter `checkin.theirstudio.com`.
-   - In Wix: **Domains → ⋯ → Manage DNS records → CNAME → Add record**, host `checkin`,
-     value `<github-user>.github.io`.
-   - Once it verifies, tick **Enforce HTTPS**.
 
 ## 4. The tag and the QR code
 
-The URL on the studio's sign is, permanently:
+Your dev sticker gets `https://<you>.github.io/rhythm-attendance/?t=static`. Pages opened
+there show a **DEV** badge next to the studio name. Make this one now and use it to test.
+
+The studio's sign gets its own address at handover, and that one is permanent:
 
 ```
 https://checkin.theirstudio.com/?t=static
 ```
 
-Your dev sticker gets `https://<you>.github.io/rhythm-attendance/?t=static`. Pages opened
-there show a **DEV** badge next to the studio name.
-
-Decide it before printing anything — it is baked into the sign. (When the rotating-code totem
-arrives it serves the same page with a changing `t` and `s`, so nothing else changes.)
+Decide it before printing the sign — it is baked in. (When the rotating-code totem arrives it
+serves the same page with a changing `t` and `s`, so nothing else changes.)
 
 - **NFC:** an NTAG213 or NTAG215 sticker. Write a single *URL* record with the free **NFC Tools**
   app, then use *Other → Set password* so nobody else can rewrite it. **Don't use "Lock tag"** —
@@ -108,6 +100,42 @@ Be the first student: tap, enter your email and name, check in. Then in the Shee
 - A row appears in **Log** (and **Students**, the first time).
 - **Check-in → Refresh dashboard** shows you. The Dashboard also rebuilds whenever the Sheet opens.
 - **Check-in → Email me the weekly summary now** sends a sample.
+
+## Handover: the studio's copy
+
+Do this with the owner once dev works, so everything lives in the studio's accounts and keeps
+running without you. Repeat steps 1–4, with these differences:
+
+1. **The Sheet and the script:** signed in as **the studio's** Google account. Put the Script ID
+   in `deploy/prod.json`, sign clasp in to the studio's account, and push:
+   ```bash
+   clasp login --user studio
+   node scripts/push.js prod
+   ```
+   When `setup` asks for permissions, it's the studio's own script asking for its own Sheet.
+2. **Deploy the API** as the studio (it runs as whoever deploys it). Put the Deployment ID in
+   `deploy/prod.json`. Open the `/exec` URL and check `runsAs` is the studio's account (masked,
+   e.g. `st***@gmail.com`), not yours. Later updates: `node scripts/push.js prod --deploy`, which
+   always runs as the studio's clasp login.
+3. **The page:** fill in `prod`'s `host` and `apiUrl` in `web/config.js` and commit. Create a
+   public repository in **the studio's** GitHub account and push to it:
+   ```bash
+   git remote add studio https://github.com/<studio>/rhythm-attendance.git
+   git push studio main
+   ```
+   Turn on Pages as in step 3, then add the custom domain, so the URL on the sign is the
+   studio's and outlives any hosting choice:
+   - In GitHub **Settings → Pages → Custom domain**, enter `checkin.theirstudio.com`.
+   - In Wix: **Domains → ⋯ → Manage DNS records → CNAME → Add record**, host `checkin`,
+     value `<studio's github user>.github.io`.
+   - Once it verifies, tick **Enforce HTTPS**.
+4. **The sign:** write the studio's address to the NFC tag and QR code and test both.
+5. **Wix:** the owner (or the Wix co-owner) makes a separate key for the studio's copy and pastes
+   it into its Script Properties themselves (see [Connecting Wix](#connecting-wix-read-only-being-built)).
+6. Turn on the Monday email and nightly backups in the studio's Sheet, and make sure `ownerEmail`
+   in Config is the owner's.
+
+Your dev copy stays as it is, for trying out changes before they reach the studio.
 
 ## Day to day, for the owner
 
@@ -127,7 +155,7 @@ Don't rename column headers — the script finds columns by name. Adding columns
 ## Backups and restoring
 
 Every night around 2am the script copies the data tabs into a new spreadsheet in the
-**Check-in backups** folder of the studio's Drive, named like *Studio Check-ins — backup
+**Check-in backups** folder of the Sheet owner's Drive (yours for dev, the studio's for prod), named like *Studio Check-ins — backup
 2026-11-04 02:00*. It keeps every backup from the last 30 days and the first one of each month
 before that; older ones go to Drive's trash, which itself keeps them another 30 days. The copies
 contain no script, so opening one never changes anything. **Check-in → Back up now** makes one on

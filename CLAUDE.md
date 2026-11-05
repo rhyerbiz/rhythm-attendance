@@ -104,6 +104,8 @@ The preview toolbar switches scenarios (one class / two at once / free class / n
 ## Dev and prod
 
 Two identical copies: **dev** in the builder's Google/GitHub accounts, **prod** in the studio's.
+Everything is built and tested on dev first. The studio's accounts aren't involved until handover,
+when prod is set up with the owner (SETUP.md "Handover").
 `web/config.js` lists both API URLs and the page picks by hostname (anything else = mock; `?dev`
 forces dev; dev shows a DEV badge). `deploy/<env>.json` holds the clasp user, script ID and web
 app deployment ID. Git remotes: `origin` = dev, `studio` = prod. Changes go to dev first.
