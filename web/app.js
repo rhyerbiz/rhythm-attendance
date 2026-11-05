@@ -19,6 +19,7 @@
   var CODE = { t: params.get('t') || '', s: params.get('s') || '' };
   var KEY = 'rhythm.student';
   var STUDIO_KEY = 'rhythm.studio';
+  var CHAT_KEY = 'rhythm.chatJoined'; // the chat link this phone already tapped, so regulars aren't asked again
   var app = document.getElementById('app');
 
   // ------------------------------------------------------------- storage
@@ -98,6 +99,24 @@
   }
   function bindNotYou() {
     on('#notyou', 'click', function () { forgetMe(); viewRegister({}); });
+  }
+
+  // "Join our group chat": shown until this phone taps it. A new link (Config chatLink) shows again.
+  function chatHtml(res) {
+    var link = res && res.chatLink;
+    if (!link) return '';
+    try { if (localStorage.getItem(CHAT_KEY) === link) return ''; } catch (e) { /* show it */ }
+    return '<div class="card center" id="chatcard">' +
+      '<p style="margin:0 0 2px"><b>Join the studio\'s group chat</b></p>' +
+      '<p class="small muted">Class updates, news and practice partners.</p>' +
+      '<a class="btn secondary" id="chat" href="' + esc(link) + '" target="_blank" rel="noopener">Join the group chat</a>' +
+      '</div>';
+  }
+  function bindChat(res) {
+    on('#chat', 'click', function () {
+      try { localStorage.setItem(CHAT_KEY, res.chatLink); } catch (e) { /* asked again next time */ }
+      setTimeout(function () { var c = app.querySelector('#chatcard'); if (c) c.remove(); }, 400);
+    });
   }
 
   // A list of today's classes to tick. Ones already checked in to show as done.
@@ -206,9 +225,35 @@
         ? '<div class="card"><p style="margin:0"><b>Staying for classes later today?</b></p>' +
           '<p class="small muted">You can check in to them now.</p>' + pickerHtml(later, 'Check in early') + '</div>'
         : '') +
+      // A class that isn't on the schedule (a makeup, a change): recorded for the studio, charged nothing.
+      '<div class="card"><p style="margin:0"><b>Here for a class that isn\'t listed?</b></p>' +
+        '<p class="small muted">Let the studio know you came. They\'ll match it to the right class.</p>' +
+        '<label for="unote">Which class? (optional)</label>' +
+        '<input id="unote" maxlength="200" autocomplete="off" placeholder="e.g. Salsa makeup class">' +
+        '<button class="btn secondary" id="anyway">I\'m here for a class</button>' +
+      '</div>' +
+      chatHtml(res) +
       notYou()
     );
     if (later.length) bindPicker(me, 'Check in early');
+    on('#anyway', 'click', function () {
+      checkin(me, [], { unscheduled: true, note: app.querySelector('#unote').value.trim() });
+    });
+    bindChat(res);
+    bindNotYou();
+  }
+
+  function viewUnscheduled(me, res) {
+    render(
+      '<div class="card center">' +
+        CHECK +
+        '<h1>' + (res.already ? 'Already noted' : 'Thanks, ' + esc(firstName(res.student.name)) + '!') + '</h1>' +
+        '<p class="muted">The studio knows you\'re here and will match it to your class.</p>' +
+      '</div>' +
+      chatHtml(res) +
+      notYou()
+    );
+    bindChat(res);
     bindNotYou();
   }
 
@@ -264,9 +309,11 @@
       (more.length
         ? '<div class="card"><p style="margin:0 0 4px"><b>Taking another class today?</b></p>' + pickerHtml(more, 'Check in') + '</div>'
         : '') +
+      chatHtml(res) +
       notYou()
     );
     if (more.length) bindPicker(me, 'Check in', list.map(function (c) { return c.id; }));
+    bindChat(res);
     bindNotYou();
     on('#venmo', 'click', function () {
       // Venmo opens in its app; when they come back, ask whether it went through.
@@ -305,10 +352,13 @@
   }
 
   // ---------------------------------------------------------------- flow
-  function checkin(me, classIds) {
+  // `extra`: {unscheduled, note} for "I'm here for a class" (safe to retry: one per day).
+  function checkin(me, classIds, extra) {
     viewBusy(me);
-    var retry = function () { checkin(me, classIds); };
-    apiRetry({ action: 'checkin', name: me.name || '', email: me.email, classIds: classIds || [], code: CODE }, 3)
+    var retry = function () { checkin(me, classIds, extra); };
+    var req = { action: 'checkin', name: me.name || '', email: me.email, classIds: classIds || [], code: CODE };
+    if (extra) { req.unscheduled = !!extra.unscheduled; req.note = extra.note || ''; }
+    apiRetry(req, 3)
       .then(function (res) {
         setStudio(res.studio);
         if (res.student) saveMe(me = { name: res.student.name, email: res.student.email });
@@ -316,6 +366,7 @@
         if (!res.ok) return viewError(res.error || 'Something went wrong.', retry);
         if (res.status === 'choose') return viewChoose(me, res);
         if (res.status === 'noClass') return viewNoClass(me, res);
+        if (res.status === 'unscheduled') return viewUnscheduled(me, res);
         viewDone(me, res);
       })
       .catch(function () {

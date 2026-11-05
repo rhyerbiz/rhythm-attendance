@@ -32,6 +32,8 @@ const DEFAULT_CONFIG = {
   lateMinutesAfterEnd: 90,
   ownerEmail: '',
   lapsedAfterDays: 21,
+  wixSkip: 'Kids',
+  chatLink: '',
 };
 
 const CONFIG_NOTES = {
@@ -42,6 +44,8 @@ const CONFIG_NOTES = {
   lateMinutesAfterEnd: 'Check-in stays open this many minutes after a class ends, for anyone who forgot on the way in.',
   ownerEmail: 'Where the weekly summary goes. Blank = the account that owns this sheet.',
   lapsedAfterDays: 'A regular who has not been in for this many days shows as lapsed.',
+  chatLink: "Invite link to the studio's group chat (e.g. a Telegram invite link). Students see a Join button after checking in. Blank = no button.",
+  wixSkip: 'Wix classes to leave out of check-in: words in the class name, separated by commas (e.g. Kids, Private). "none" = take them all.',
 };
 
 const DAY_KEYS = { mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6, sun: 7 };
@@ -146,9 +150,69 @@ function classFrom_(r, cfg) {
   };
 }
 
+/**
+ * The owner's Schedule tab plus the "Wix schedule" tab the Wix sync writes.
+ * A typed class with the same name as one in Wix is left out: Wix decides when
+ * that class runs, so a session cancelled in Wix can't come back from a row
+ * typed before Wix was connected, and nothing shows twice. Typed classes Wix
+ * doesn't have keep working.
+ */
 function classesFrom_(book, cfg) {
-  return (book.schedule || []).map(function (r) { return classFrom_(r, cfg); })
-    .filter(function (c) { return c.name && c.start != null && c.days.length; });
+  const ok = function (c) { return c.name && c.start != null && c.days.length; };
+  const wix = (book.wixSchedule || []).map(function (r) { return classFrom_(r, cfg); }).filter(ok);
+  const inWix = {};
+  wix.forEach(function (c) { inWix[c.name.toLowerCase()] = true; });
+  const typed = (book.schedule || []).map(function (r) { return classFrom_(r, cfg); })
+    .filter(function (c) { return ok(c) && !inWix[c.name.toLowerCase()]; });
+  return typed.concat(wix);
+}
+
+/** Header of the "Wix schedule" tab: the Schedule columns plus where each row came from. */
+const WIX_SCHEDULE_HEADERS = SCHEMA.Schedule.concat(['WixService']);
+
+/**
+ * Wix calendar sessions → rows for the "Wix schedule" tab, one per session,
+ * each on its own date (FirstDate = LastDate), so classIsOn_() needs nothing new.
+ *   sessions: [{ title, serviceId, start: 'yyyy-MM-ddTHH:mm[:ss]', end, status, type }]
+ *   services: { <serviceId>: { name, price: number|null } }  (price null = use dropInPrice)
+ * Cancelled sessions, appointments and classes matching cfg.wixSkip are left out.
+ * The ClassID is the same for a service at the same start time every week, so
+ * the Dashboard and Log treat "Dance 101, Mon 7pm" as one class over time, while
+ * two sessions of a class on the same day stay separate check-ins.
+ */
+function wixScheduleRows_(sessions, services, cfg) {
+  const skip = str_(cfg.wixSkip).toLowerCase() === 'none' ? [] :
+    str_(cfg.wixSkip).toLowerCase().split(',').map(function (w) { return w.trim(); }).filter(String);
+  const rows = [], seen = {};
+  (sessions || []).forEach(function (s) {
+    if (str_(s.status).toUpperCase() === 'CANCELLED') return;
+    if (['CLASS', 'COURSE'].indexOf(str_(s.type).toUpperCase()) < 0) return;
+    const svc = services[s.serviceId] || {};
+    const name = str_(s.title) || str_(svc.name);
+    const lower = name.toLowerCase();
+    if (!name || skip.some(function (w) { return lower.indexOf(w) >= 0; })) return;
+    const day = dayStr_(s.start);
+    const start = parseTime_(str_(s.start).slice(11, 16));
+    const end = parseTime_(str_(s.end).slice(11, 16));
+    if (!day || start == null) return;
+    const hhmm = str_(s.start).slice(11, 16);
+    const id = 'W' + str_(s.serviceId).replace(/-/g, '').slice(0, 8) + '-' + hhmm.replace(':', '');
+    if (seen[day + '|' + id]) return;
+    seen[day + '|' + id] = true;
+    rows.push({
+      ClassID: id,
+      Class: name,
+      Days: DAY_LABELS[dowOf_(day)],
+      Start: hhmm,
+      Minutes: end != null && end > start ? end - start : 60,
+      Price: svc.price == null ? '' : svc.price,
+      Active: 'yes',
+      FirstDate: day,
+      LastDate: day,
+      WixService: str_(s.serviceId),
+    });
+  });
+  return rows.sort(function (a, b) { return (a.FirstDate + a.Start) < (b.FirstDate + b.Start) ? -1 : 1; });
 }
 
 function classIsOn_(c, day) {
@@ -174,8 +238,19 @@ function resolveStudentId_(book, ref) {
   return byName.length === 1 ? str_(byName[0].StudentID) : '';
 }
 
+/** Check-ins that count: not voided, and not an unscheduled one still waiting for the owner. */
 function liveLog_(book) {
-  return (book.log || []).filter(function (l) { return str_(l.Status).toLowerCase() !== 'void' && dayStr_(l.ClassDate); });
+  return (book.log || []).filter(function (l) {
+    const st = str_(l.Status).toLowerCase();
+    return st !== 'void' && st !== UNSCHEDULED && dayStr_(l.ClassDate);
+  });
+}
+
+// A student who came for a class that isn't on the schedule. It costs nothing and counts as no
+// visit until the owner fills in Class and sets Status to ok (or void).
+const UNSCHEDULED = 'unscheduled';
+function unscheduledLog_(book) {
+  return (book.log || []).filter(function (l) { return str_(l.Status).toLowerCase() === UNSCHEDULED; });
 }
 
 // --------------------------------- classes ---------------------------------
@@ -405,10 +480,30 @@ function checkin_(book, cfg, req, now, io) {
     isNew = true;
   }
 
-  const base = { ok: true, studio: cfg.studioName, student: studentView_(student), isNew: isNew };
+  // The chat link is only ever sent to someone who has checked in, never put in the page itself.
+  const chatLink = /^https:\/\/\S+$/.test(cfg.chatLink) ? cfg.chatLink : '';
+  const base = { ok: true, studio: cfg.studioName, student: studentView_(student), isNew: isNew, chatLink: chatLink };
   const classes = classesFrom_(book, cfg);
   const avail = todaysClasses_(classes, now, cfg);
   const sid = str_(student.StudentID);
+
+  // "I'm here for a class anyway": recorded for the owner to sort out, charged nothing. One per
+  // student per day (a retry or second tap returns the same row), like a repeat check-in.
+  if (req.unscheduled) {
+    const note = str_(req.note).replace(/\s+/g, ' ').slice(0, 200);
+    const mine = unscheduledLog_(book).filter(function (l) {
+      return str_(l.StudentID) === sid && dayStr_(l.ClassDate) === now.date;
+    })[0];
+    if (mine) return Object.assign(base, { status: 'unscheduled', checkinId: str_(mine.CheckinID), already: true });
+    const row = {
+      CheckinID: io.newId('C'), When: now.stamp, ClassDate: now.date,
+      StudentID: sid, Student: str_(student.Name), ClassID: '', Class: '',
+      Price: '', Source: codeSource_(req.code), Status: UNSCHEDULED, Note: note,
+    };
+    book.log.push(row);
+    io.append('Log', row);
+    return Object.assign(base, { status: 'unscheduled', checkinId: row.CheckinID, already: false });
+  }
   const doneRow = function (c) {
     return liveLog_(book).filter(function (l) {
       return str_(l.StudentID) === sid && dayStr_(l.ClassDate) === now.date && str_(l.ClassID) === c.id;
@@ -508,12 +603,19 @@ function sessionsSince_(book, fromDay) {
   liveLog_(book).forEach(function (l) {
     const day = dayStr_(l.ClassDate);
     if (day < fromDay) return;
-    const key = day + '|' + str_(l.ClassID);
+    const key = day + '|' + str_(l.ClassID) + '|' + str_(l.Class); // owner-fixed unscheduled rows may have no ClassID
     if (!map[key]) map[key] = { day: day, name: str_(l.Class), who: [] };
     map[key].who.push(str_(l.Student));
   });
   return Object.keys(map).map(function (k) { return map[k]; })
     .sort(function (a, b) { return a.day < b.day ? 1 : a.day > b.day ? -1 : a.name < b.name ? -1 : 1; });
+}
+
+/** Unscheduled check-ins still waiting for the owner, newest first. */
+function reviewItems_(book) {
+  return unscheduledLog_(book).filter(function (l) { return dayStr_(l.ClassDate); }).map(function (l) {
+    return { day: dayStr_(l.ClassDate), name: str_(l.Student), note: str_(l.Note), id: str_(l.CheckinID) };
+  }).sort(function (a, b) { return a.day < b.day ? 1 : a.day > b.day ? -1 : 0; });
 }
 
 /** The Dashboard tab as a 2-D array (ragged; Code.gs pads it). */
@@ -533,6 +635,12 @@ function dashboardRows_(book, now) {
     rows.push([s.name, s.email, s.last ? fmtDay_(s.last) : '', s.visits30, s.visits, s.plan,
       s.hasPackage ? s.creditsLeft : '', s.owed > 0 ? s.owed : '', flags.join('; ')]);
   });
+  const review = reviewItems_(book);
+  if (review.length) {
+    rows.push([], ['To review: came for a class that wasn\'t on the schedule. In Log, fill in Class and set Status to ok (or void).'],
+      ['Day', 'Student', 'Their note', 'CheckinID']);
+    review.forEach(function (r) { rows.push([fmtDay_(r.day), r.name, r.note, r.id]); });
+  }
   rows.push([], ['Last 14 days', 'Class', 'Count', 'Who']);
   sessionsSince_(book, addDays_(now.date, -13)).forEach(function (x) {
     rows.push([fmtDay_(x.day), x.name, x.who.length, x.who.join(', ')]);
@@ -559,6 +667,7 @@ function weeklySummary_(book, now) {
       .map(function (s) { return { name: s.name, creditsLeft: s.creditsLeft }; }),
     lapsed: stats.filter(function (s) { return s.lapsed; })
       .map(function (s) { return { name: s.name, last: fmtDay_(s.last) }; }),
+    review: reviewItems_(book).map(function (r) { return { name: r.name, day: fmtDay_(r.day), note: r.note }; }),
     newStudents: (book.students || []).filter(function (s) { return dayStr_(s.FirstSeen) >= addDays_(now.date, -7); })
       .map(function (s) { return str_(s.Name); }),
   };

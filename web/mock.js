@@ -69,6 +69,9 @@ window.MockBackend = (function () {
   function handle(req) {
     var book = load();
     book.schedule = scheduleFor(book.scenario); // keep "starting soon" true as time passes
+    if (!book.config.some(function (r) { return r.Key === 'chatLink'; })) {
+      book.config.push({ Key: 'chatLink', Value: 'https://t.me/+preview-only-not-a-real-group' });
+    }
     var io = {
       newId: function (p) { return p + Math.random().toString(36).slice(2, 10); },
       append: function () { /* rows are already in book */ },

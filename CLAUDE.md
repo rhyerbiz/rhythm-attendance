@@ -29,8 +29,15 @@ not the owner.
   Core plan) instead of the Schedule tab. Read-only; never write bookings back. The site uses
   Fit by Wix, so classes are Wix Bookings services. Wix API keys can't be read-only, so
   `wixRead_()` in Wix.gs allows only the read calls listed in `WIX_READS`. Every Wix call goes
-  through it. Key and site ID are in Script Properties (`wixApiKey`, `wixSiteId`). So far only
-  `wixTest` exists; it writes a "Wix preview" tab and nothing else.
+  through it. Key and IDs are in Script Properties (`wixApiKey`, `wixAccountId`, `wixSiteId`; the site ID can
+  be looked up from the account by the one account-level read, `sites`). `wixTest` writes a
+  "Wix preview" tab. **Schedule sync (built):** `wixSyncSchedule` (hourly trigger, installed by
+  `wixSyncNow`) rewrites a "Wix schedule" tab with the next 14 days of sessions, one row per
+  session (FirstDate = LastDate), via the pure `wixScheduleRows_` in Logic.gs. `classesFrom_`
+  merges it with Schedule; a typed class with the same name as a Wix class is dropped. Config
+  `wixSkip` (default `Kids`) leaves classes out. On a failed sync the tab is kept; it only throws
+  after a day without a good sync. Still to do: plans/packages from Pricing Plans (the key lacked
+  that permission at first).
 
 ## Layout
 
@@ -85,6 +92,12 @@ docs/SETUP.md            deployment and owner how-to
     not yet checked in → checked in automatically. Several → the student ticks them. Later classes
     today can always be picked early (`more` / `later`), so a series is one check-in. A request
     may carry several `classIds`; ones already checked in come back as `already`.
+11a. **No class open → "I'm here for a class".** Records a Log row with `Status = unscheduled`
+    (blank Class, optional note), one per student per day (so retries are safe). `liveLog_` skips
+    it, so it costs nothing and isn't a visit until the owner fills in Class and sets `ok`
+    (or `void`). `reviewItems_` lists them on the Dashboard and in the weekly email.
+11b. **Group chat:** Config `chatLink` (https only) is returned in check-in responses, never put
+    in the static page. The page shows a Join button until that phone has tapped that link.
 12. **The Sheet's `studioName` wins.** The page remembers the last name the API sent;
     `config.js` only covers a phone's first visit.
 13. **Backups:** `backupNow` (nightly trigger) copies the SCHEMA tabs — values only, no script —

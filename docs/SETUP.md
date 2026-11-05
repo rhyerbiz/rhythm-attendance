@@ -21,12 +21,23 @@ Updates afterwards: see [Updating](#updating-dev-first-then-prod).
 
 1. Signed in to **your** Google account, create a new Google Sheet named something like
    *Studio Check-ins*. Check **File → Settings → Time zone** is the studio's.
-2. **Extensions → Apps Script.** Copy the **Script ID** from **Project Settings** into
-   `deploy/dev.json`. Then sign clasp in to your account:
+2. **Extensions → Apps Script.** This opens the Sheet's own script project in a new tab. (If it
+   says "unable to open the file", your browser is signed in to several Google accounts; open the
+   Sheet in an Incognito window or a Chrome profile signed in to just this account.) Give the
+   project a name at the top left (e.g. *Studio Check-ins*), then:
+   - Click the **gear icon (Project Settings)** in the left sidebar.
+   - Under **IDs**, click **Copy** next to **Script ID**. It's a long code like `1AbC…xyz`; the
+     same code appears in the editor's address, between `/projects/` and `/edit`.
+   - Paste it into `deploy/dev.json` as `"scriptId": "…"`.
+
+   Then sign clasp in to the account that owns the Sheet (you only do this once):
    ```bash
    npm install -g @google/clasp
    clasp login --user dev
    ```
+   The browser opens; choose the account that owns the Sheet. If clasp is already signed in to
+   that same account for another project (`clasp show-authorized-user` tells you which), you can
+   skip this and set `"user": "default"` in `deploy/dev.json` instead.
    If Apps Script refuses the push, turn on the Apps Script API for your account at
    https://script.google.com/home/usersettings. Then push the code:
    ```bash
@@ -133,7 +144,9 @@ running without you. Repeat steps 1–4, with these differences:
 5. **Wix:** the owner (or the Wix co-owner) makes a separate key for the studio's copy and pastes
    it into its Script Properties themselves (see [Connecting Wix](#connecting-wix-read-only-being-built)).
 6. Turn on the Monday email and nightly backups in the studio's Sheet, and make sure `ownerEmail`
-   in Config is the owner's.
+   in Config is the owner's. If Wix is connected, also choose **Get classes from Wix now (and
+   every hour)**. Do these menu items **signed in as the studio's account**: a trigger runs as
+   whoever turns it on, so if you click them as yourself they'd keep running under your account.
 
 Your dev copy stays as it is, for trying out changes before they reach the studio.
 
@@ -147,6 +160,8 @@ Your dev copy stays as it is, for trying out changes before they reach the studi
 | Record a cash/Venmo payment for drop-ins | Add a row to **Payments** with the amount. |
 | Check a payment a student said they sent | In **Payments**, set `Status` to `confirmed` — or `rejected` if it never arrived (it then shows as owed again). |
 | Undo a mistaken check-in | In **Log**, set its `Status` to `void`. |
+| Sort out "came for a class that wasn't on the schedule" | A student with no class to check in to can tap **I'm here for a class**, with an optional note. It's a **Log** row with `Status` `unscheduled`: no charge, not counted as a visit, and listed under **To review** on the Dashboard and in Monday's email. Fill in `Class` and set `Status` to `ok` (it then counts as a drop-in, or a credit or plan class), or `void`. |
+| Offer the group chat | Put the chat's invite link (e.g. Telegram) in `chatLink` in **Config**. Students see **Join the group chat** after checking in, until they tap it once on that phone. The link is only sent to someone who has checked in, but it can still be passed on, so turn on admin approval for the invite link in Telegram. |
 | Rename the studio | Change `studioName` in **Config**. |
 | See who owes / who's running low / who's lapsed | The **Dashboard** tab, or Monday's email. |
 
@@ -171,10 +186,10 @@ To undo a mistake:
 Both copies live in the studio's Google account, so they protect against mistakes, not against
 losing the account. Keep the account's recovery phone and email up to date.
 
-## Connecting Wix (read-only, being built)
+## Connecting Wix (read-only)
 
 The script can read the studio's Wix site: the Bookings classes, their sessions and the Pricing
-Plans. For now it only shows what it finds; the Schedule tab is still what check-in uses.
+Plans. Once connected, the class schedule comes from Wix and nobody has to type it.
 
 1. **The key.** A Wix account owner or co-owner creates it in the
    [API Keys Manager](https://manage.wix.com/account/api-keys). Give it access to **this site
@@ -183,16 +198,37 @@ Plans. For now it only shows what it finds; the Schedule tab is still what check
    the few read calls it's allowed to make).
 2. **Use a separate key per copy.** One key goes in the dev copy. The prod key is made at
    handover and pasted straight into the studio's script, so it never leaves the studio.
-3. **Store it.** In the Apps Script editor, open **Project Settings → Script Properties** and add:
+3. **Store it.** In the Apps Script editor, open **Project Settings** (gear icon), scroll to
+   **Script Properties → Edit script properties**, and add:
    - `wixApiKey`: the key
-   - `wixSiteId`: the long code after `/dashboard/` in the Wix dashboard's address
+   - `wixAccountId`: the Wix account ID that came with the key
+   - `wixSiteId` *(optional)*: the long code after `/dashboard/` in the Wix dashboard's
+     address. Leave it out if you don't have it: the test below looks it up from the account and
+     saves it if the account has one site, or lists the sites so you can copy the right ID.
+
+   Click **Save script properties**. Then delete the message the key arrived in.
 
    Anyone who can edit the Sheet can see these values, so give edit access only to people you'd
    trust with the key. If a key may have leaked, delete it in Wix and make a new one.
-4. **Check it.** Choose **Check-in → Test the Wix connection (read-only)**. The first run asks
+4. **Check it.** In the Sheet (not the script editor), reload the page; a **Check-in** menu
+   appears after **Help**. Choose **Check-in → Test the Wix connection (read-only)**. (Or, in
+   the editor, pick `wixTest` in the function dropdown and click **Run**.) The first run asks
    permission to "connect to an external service". It fills a **Wix preview** tab with the
    classes, the next 7 days of sessions, the plans and a count of plan purchases (no names). If
    a section says 403, the key is missing that permission or is for a different site.
+5. **Turn on the schedule.** Choose **Check-in → Get classes from Wix now (and every hour)**.
+   It fills a **Wix schedule** tab with every class session in the next two weeks and keeps it
+   up to date every hour, so new classes, holidays and cancellations in Wix reach check-in on
+   their own. Check-in reads this tab together with **Schedule**:
+   - Don't edit the **Wix schedule** tab; it's rewritten every hour. Change classes in Wix.
+   - A class typed in **Schedule** with the same name as a Wix class is ignored, so Wix
+     decides when it runs. Once Wix is on, delete those typed rows. Typed classes Wix doesn't
+     have keep working.
+   - `wixSkip` in **Config** leaves classes out by words in their name (starts as `Kids`; e.g.
+     `Kids, Private`). Run **First-time setup** once to add it to an older Config tab.
+   - Prices: a Wix class with a fixed price uses it; "custom" prices use `dropInPrice`.
+   - If Wix can't be reached, check-in keeps the last copy. Google emails the owner only if it
+     has failed for a whole day.
 
 ## Updating: dev first, then prod
 

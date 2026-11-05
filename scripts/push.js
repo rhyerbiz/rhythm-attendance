@@ -26,7 +26,8 @@ if (deploy && !settings.deploymentId) fail('Put the web app deployment ID (Deplo
 
 function run(cmd, args, quiet) {
   // shell: clasp is a .cmd on Windows. Arguments here never contain user input.
-  const r = spawnSync(cmd, args.map((a) => (/\s/.test(a) ? '"' + a + '"' : a)), { cwd: root, shell: true, encoding: 'utf8', stdio: quiet ? 'pipe' : 'inherit' });
+  const line = [cmd].concat(args.map((a) => (/\s/.test(a) ? '"' + a + '"' : a))).join(' ');
+  const r = spawnSync(line, { cwd: root, shell: true, encoding: 'utf8', stdio: quiet ? 'pipe' : 'inherit' });
   if (r.status !== 0) fail(cmd + ' ' + args[0] + ' failed.' + (quiet ? '\n' + (r.stderr || r.stdout) : ''));
   return (r.stdout || '').trim();
 }

@@ -9,6 +9,10 @@
  */
 
 const TAB_KEYS = { Config: 'config', Schedule: 'schedule', Students: 'students', Log: 'log', Packages: 'packages', Plans: 'plans', Payments: 'payments' };
+// Written by the Wix sync (Wix.gs), never by hand; absent until it first runs. Defined here,
+// not in Wix.gs, because top-level code can't rely on another file having loaded first.
+const WIX_SCHEDULE_TAB = 'Wix schedule';
+TAB_KEYS[WIX_SCHEDULE_TAB] = 'wixSchedule';
 
 // ------------------------------------ web ------------------------------------
 
@@ -96,7 +100,7 @@ function readBook_() {
       const values = range.getValues();
       // A class's Start is read as displayed ("7:00 PM"): Sheets hands back a time-only cell
       // as an 1899 date, and 1899 time-zone rules can shift it by minutes when formatted.
-      const shown = tab === 'Schedule' ? range.getDisplayValues() : null;
+      const shown = tab === 'Schedule' || tab === WIX_SCHEDULE_TAB ? range.getDisplayValues() : null;
       headers = values[0].map(function (h) { return String(h).trim(); });
       for (let i = 1; i < values.length; i++) {
         if (values[i].every(function (v) { return v === ''; })) continue;
@@ -163,6 +167,7 @@ function onOpen() {
     .addItem('Turn on the Monday email and nightly backups', 'installTriggers')
     .addItem('First-time setup', 'setup')
     .addItem('Test the Wix connection (read-only)', 'wixTest')
+    .addItem('Get classes from Wix now (and every hour)', 'wixSyncNow')
     .addToUi();
   try { refreshDashboard(); } catch (e) { /* setup has not run yet */ }
 }
@@ -211,6 +216,11 @@ function setup() {
   const plans = ss.getSheetByName('Plans');
   plans.getRange(2, SCHEMA.Plans.indexOf('Plan') + 1, Math.max(plans.getMaxRows() - 1, 1), 1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(['1 class/week', '2 classes/week'], true).setAllowInvalid(true).build());
+  // Log status: ok (counts), void (undone), unscheduled (came for a class not on the schedule; to review).
+  const log = ss.getSheetByName('Log');
+  const statusCol = log.getRange(1, 1, 1, log.getLastColumn()).getValues()[0].indexOf('Status') + 1;
+  if (statusCol) log.getRange(2, statusCol, Math.max(log.getMaxRows() - 1, 1), 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(['ok', 'void', UNSCHEDULED], true).setAllowInvalid(true).build());
 
   if (!ss.getSheetByName('Dashboard')) ss.insertSheet('Dashboard', 0);
   const extra = ss.getSheetByName('Sheet1');
@@ -259,6 +269,9 @@ function sendWeeklySummary() {
       return '<li>' + esc(o.name) + ' — ' + esc(o.label) + (o.pending ? ' (includes $' + o.pending + ' they say they sent)' : '') +
         (o.requestUrl ? ' · <a href="' + esc(o.requestUrl) + '">Request on Venmo</a>' : '') + '</li>';
     })),
+    s.review.length ? section("To review: came for a class that wasn't on the schedule", s.review.map(function (o) {
+      return '<li>' + esc(o.name) + ' — ' + esc(o.day) + (o.note ? ': “' + esc(o.note) + '”' : '') + '</li>';
+    })) + '<p style="margin:4px 0 0;color:#777">In the Log tab, fill in the Class and set Status to ok, or void if they didn\'t take one.</p>' : '',
     section('Packages running out', s.lowCredits.map(function (o) {
       return '<li>' + esc(o.name) + ' — ' + (o.creditsLeft ? '1 class left' : 'used up') + '</li>';
     })),

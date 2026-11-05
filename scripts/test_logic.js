@@ -436,4 +436,106 @@ test('a monthly plan shows on the Dashboard and silences an old used-up package'
   assert.strictEqual(fn('weeklySummary_')(book, now).lowCredits.length, 0);
 });
 
+// ------------------------------------------------------- unscheduled + chat
+test('"here for a class" records an unscheduled row, charges nothing, and a retry returns the same row', () => {
+  const book = makeBook({ students: [{ StudentID: 'S1', Name: 'Jess Lee', Email: 'jess@example.com' }] });
+  const now = at('2026-11-03', '12:00'); // a Tuesday: nothing on the schedule
+  const io = makeIo();
+  const res = fn('handleRequest_')(book, { action: 'checkin', email: 'jess@example.com', unscheduled: true, note: '  Tango   makeup ', code: { t: 'static' } }, now, io);
+  assert.strictEqual(res.status, 'unscheduled');
+  assert.strictEqual(res.already, false);
+  same(io.written.map(([t, r]) => [t, r.Status, r.Class, r.Note]), [['Log', 'unscheduled', '', 'Tango makeup']]);
+  const again = fn('handleRequest_')(book, { action: 'checkin', email: 'jess@example.com', unscheduled: true, code: { t: 'static' } }, now, makeIo());
+  assert.strictEqual(again.already, true);
+  assert.strictEqual(again.checkinId, res.checkinId);
+  // Not a visit and not owed until the owner sorts it out.
+  const led = fn('ledgerFor_')(book, fn('configFrom_')(book.config), 'S1', now.date);
+  assert.strictEqual(led.owed, 0);
+  const rows = fn('dashboardRows_')(book, now);
+  const jess = rows.find((r) => r[0] === 'Jess Lee');
+  assert.strictEqual(jess[rows[2].indexOf('Visits (all)')], 0);
+  assert(rows.some((r) => String(r[0]).startsWith('To review')));
+  assert(rows.some((r) => r[1] === 'Jess Lee' && r[2] === 'Tango makeup'));
+  same(fn('weeklySummary_')(book, now).review, [{ name: 'Jess Lee', day: 'Tue Nov 3', note: 'Tango makeup' }]);
+});
+
+test('once the owner fills in Class and sets ok, it counts as a drop-in', () => {
+  const book = makeBook({
+    students: [{ StudentID: 'S1', Name: 'Jess Lee', Email: 'jess@example.com' }],
+    log: [{ CheckinID: 'C9', ClassDate: '2026-11-03', StudentID: 'S1', Student: 'Jess Lee', ClassID: '', Class: 'Tango', Price: '', Status: 'ok' }],
+  });
+  const now = at('2026-11-04', '09:00');
+  assert.strictEqual(fn('ledgerFor_')(book, fn('configFrom_')(book.config), 'S1', now.date).owed, 20);
+  assert(!fn('dashboardRows_')(book, now).some((r) => String(r[0]).startsWith('To review')));
+});
+
+test('chatLink goes to checked-in students only when it is an https link', () => {
+  const withLink = (v) => makeBook({ config: makeBook().config.concat([{ Key: 'chatLink', Value: v }]) });
+  assert.strictEqual(checkin(withLink('https://t.me/+abc123'), at(MON, '18:50')).chatLink, 'https://t.me/+abc123');
+  assert.strictEqual(checkin(withLink('javascript:alert(1)'), at(MON, '18:50')).chatLink, '');
+  assert.strictEqual(checkin(makeBook(), at(MON, '18:50')).chatLink, '');
+  assert.strictEqual(checkin(withLink('https://t.me/+abc123'), at('2026-11-03', '12:00')).chatLink, 'https://t.me/+abc123'); // noClass too
+  assert.strictEqual(fn('handleRequest_')(withLink('https://t.me/+abc123'), { action: 'ping' }, at(MON, '12:00'), makeIo()).chatLink, undefined);
+});
+
+// ------------------------------------------------------------------ Wix sync
+const WIX_SESSIONS = [
+  { title: 'Dance 101', serviceId: 'c0549875-d10f', start: '2026-11-09T19:00:00', end: '2026-11-09T20:00:00', status: 'CONFIRMED', type: 'CLASS' },
+  { title: 'Kids Hip Hop', serviceId: '2d2cfc33-16a5', start: '2026-11-10T17:00:00', end: '2026-11-10T18:00:00', status: 'CONFIRMED', type: 'CLASS' },
+  { title: 'Adult Hip Hop', serviceId: 'e4bab154-f6a6', start: '2026-11-11T19:15:00', end: '2026-11-11T20:30:00', status: 'CONFIRMED', type: 'CLASS' },
+  { title: 'Adult Hip Hop', serviceId: 'e4bab154-f6a6', start: '2026-11-04T19:15:00', end: '2026-11-04T20:30:00', status: 'CANCELLED', type: 'CLASS' },
+  { title: 'Daycare Session', serviceId: '58d29389', start: '2026-11-09T09:00:00', end: '2026-11-09T10:00:00', status: 'CONFIRMED', type: 'APPOINTMENT' },
+  { title: 'Couples', serviceId: 'fdcc1b4d', start: '2026-11-12T18:00:00', end: '2026-11-12T19:00:00', status: 'CONFIRMED', type: 'CLASS' },
+];
+const WIX_SERVICES = { fdcc1b4d: { name: 'Couples Dance Class', price: 40 } };
+const wixCfg = (skip) => fn('configFrom_')(skip == null ? [] : [{ Key: 'wixSkip', Value: skip }]);
+
+test('Wix sessions become dated schedule rows; cancelled, appointments and kids are left out', () => {
+  const rows = fn('wixScheduleRows_')(WIX_SESSIONS, WIX_SERVICES, wixCfg());
+  same(rows.map((r) => [r.Class, r.Days, r.Start, r.Minutes, r.FirstDate, r.LastDate, r.Price]), [
+    ['Dance 101', 'Mon', '19:00', 60, '2026-11-09', '2026-11-09', ''],
+    ['Adult Hip Hop', 'Wed', '19:15', 75, '2026-11-11', '2026-11-11', ''],
+    ['Couples', 'Thu', '18:00', 60, '2026-11-12', '2026-11-12', 40],
+  ]);
+  assert.strictEqual(rows[0].ClassID, 'Wc0549875-1900');
+});
+
+test('wixSkip takes several words, and "none" keeps every class', () => {
+  const names = (skip) => fn('wixScheduleRows_')(WIX_SESSIONS, WIX_SERVICES, wixCfg(skip)).map((r) => r.Class);
+  same(names('kids, couples'), ['Dance 101', 'Adult Hip Hop']);
+  same(names('none'), ['Dance 101', 'Kids Hip Hop', 'Adult Hip Hop', 'Couples']);
+});
+
+test('a Wix session checks in like a typed class, only on its own date', () => {
+  const wixSchedule = fn('wixScheduleRows_')(WIX_SESSIONS, WIX_SERVICES, wixCfg());
+  const book = makeBook({ schedule: [], wixSchedule: wixSchedule });
+  const res = checkin(book, at('2026-11-09', '18:50'));
+  assert.strictEqual(res.status, 'ok');
+  assert.strictEqual(res.checkins[0].name, 'Dance 101');
+  // Same weekday, a week later: no session in Wix, so nothing is open.
+  assert.strictEqual(checkin(makeBook({ schedule: [], wixSchedule: wixSchedule }), at('2026-11-16', '18:50')).status, 'noClass');
+});
+
+test('a typed class Wix also has is left to Wix; other typed classes keep working', () => {
+  const wixSchedule = fn('wixScheduleRows_')(WIX_SESSIONS, WIX_SERVICES, wixCfg());
+  const typed = [
+    { ClassID: 'K1', Class: 'dance 101', Days: 'Mon', Start: '7:00 PM', Minutes: 60 },
+    { ClassID: 'K2', Class: 'Ballet', Days: 'Mon', Start: '8:00 PM', Minutes: 60 },
+  ];
+  const on = (day) => fn('todaysClasses_')(fn('classesFrom_')({ schedule: typed, wixSchedule: wixSchedule }, wixCfg()), at(day, '18:50'), wixCfg())
+    .map((t) => t.klass.id);
+  same(on('2026-11-09'), ['Wc0549875-1900', 'K2']); // Wix's Dance 101 replaces the typed one
+  same(on('2026-11-16'), ['K2']);                    // no Dance 101 in Wix that week (e.g. cancelled): none at all
+});
+
+test('two sessions of one class on the same day are separate check-ins', () => {
+  const two = [
+    { title: 'Salsa', serviceId: 'aaaa1111', start: '2026-11-09T17:00:00', end: '2026-11-09T18:00:00', status: 'CONFIRMED', type: 'CLASS' },
+    { title: 'Salsa', serviceId: 'aaaa1111', start: '2026-11-09T18:15:00', end: '2026-11-09T19:15:00', status: 'CONFIRMED', type: 'CLASS' },
+  ];
+  const rows = fn('wixScheduleRows_')(two, {}, wixCfg());
+  assert.strictEqual(rows.length, 2);
+  assert.notStrictEqual(rows[0].ClassID, rows[1].ClassID);
+});
+
 console.log(passed + ' passed' + (process.exitCode ? ', some FAILED' : ''));
