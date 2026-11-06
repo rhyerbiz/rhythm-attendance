@@ -36,8 +36,13 @@ not the owner.
   session (FirstDate = LastDate), via the pure `wixScheduleRows_` in Logic.gs. `classesFrom_`
   merges it with Schedule; a typed class with the same name as a Wix class is dropped. Config
   `wixSkip` (default `Kids`) leaves classes out. On a failed sync the tab is kept; it only throws
-  after a day without a good sync. Still to do: plans/packages from Pricing Plans (the key lacked
-  that permission at first).
+  after a day without a good sync. **Purchase sync (built):** the same hourly run rewrites a
+  "Wix purchases" tab from Pricing Plans orders via the pure `wixPurchaseRows_`; `allPackages_` /
+  `allPlans_` merge it into the ledger. Plans named in Config `wixPacks` (default
+  `Single Class = 1`) are class passes; any other plan covers classes like a Plans row. Buyers
+  are matched by Wix login email (`member` read, needs the key's "Read Members"; cached 6 h).
+  Without that permission the rows are written unmatched. In practice almost everyone pays by
+  Venmo; Wix "Single Class" purchases (online drop-ins) are what matters, so they aren't charged twice.
 
 ## Layout
 
@@ -48,12 +53,14 @@ apps-script/Wix.gs       read-only Wix client (allow-listed calls) + "Test the W
 apps-script/appsscript.json
 web/                     the check-in page, published to GitHub Pages (static, no build)
   index.html, style.css, app.js, config.js (dev + prod host/apiUrl; studioName is a fallback)
+  logo.png               the studio's logo, copied from rhythmdw.com; style.css follows that site's teal and type
   mock.js                preview-mode backend: runs Logic.gs in the browser
 scripts/test_logic.js    Node tests for Logic.gs
 scripts/serve.js         local preview server (serves .gs as JS)
 scripts/push.js          clasp push (+ redeploy) to the dev or prod Apps Script project
 deploy/dev.json, prod.json   clasp user, script ID and web app deployment ID per copy
 docs/SETUP.md            deployment and owner how-to
+docs/TESTING.md          what a fellow student tries on the dev copy, and how to report problems
 ```
 
 ## Architecture rules
@@ -98,6 +105,12 @@ docs/SETUP.md            deployment and owner how-to
     (or `void`). `reviewItems_` lists them on the Dashboard and in the weekly email.
 11b. **Group chat:** Config `chatLink` (https only) is returned in check-in responses, never put
     in the static page. The page shows a Join button until that phone has tapped that link.
+11c. **Owner check-in** (`ownerCheckin_`, menu "Check someone in…"): same rules, but any class
+    today at any time, `Source = owner`. Only Code.gs calls it; the web API passes `{}` options,
+    so a request can't ask for it.
+11d. **Today tab** (`todayRows_`): rewritten from the in-memory book after every check-in that
+    wrote a row (in `doPost`, inside the lock), on Refresh dashboard, and hourly by the Wix sync.
+    It's the owner's view in the Sheets phone app, which has no custom menus.
 12. **The Sheet's `studioName` wins.** The page remembers the last name the API sent;
     `config.js` only covers a phone's first visit.
 13. **Backups:** `backupNow` (nightly trigger) copies the SCHEMA tabs — values only, no script —

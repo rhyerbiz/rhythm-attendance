@@ -33,6 +33,7 @@ const DEFAULT_CONFIG = {
   ownerEmail: '',
   lapsedAfterDays: 21,
   wixSkip: 'Kids',
+  wixPacks: 'Single Class = 1',
   chatLink: '',
 };
 
@@ -45,6 +46,7 @@ const CONFIG_NOTES = {
   ownerEmail: 'Where the weekly summary goes. Blank = the account that owns this sheet.',
   lapsedAfterDays: 'A regular who has not been in for this many days shows as lapsed.',
   chatLink: "Invite link to the studio's group chat (e.g. a Telegram invite link). Students see a Join button after checking in. Blank = no button.",
+  wixPacks: 'Wix pricing plans that are class passes, with how many classes each, e.g. "Single Class = 1, 10 Class Pass = 10". A purchase becomes credits, like a Packages row. Any other Wix plan counts like a Plans row (covers every class while it runs).',
   wixSkip: 'Wix classes to leave out of check-in: words in the class name, separated by commas (e.g. Kids, Private). "none" = take them all.',
 };
 
@@ -181,8 +183,7 @@ const WIX_SCHEDULE_HEADERS = SCHEMA.Schedule.concat(['WixService']);
  * two sessions of a class on the same day stay separate check-ins.
  */
 function wixScheduleRows_(sessions, services, cfg) {
-  const skip = str_(cfg.wixSkip).toLowerCase() === 'none' ? [] :
-    str_(cfg.wixSkip).toLowerCase().split(',').map(function (w) { return w.trim(); }).filter(String);
+  const skip = wixSkipWords_(cfg);
   const rows = [], seen = {};
   (sessions || []).forEach(function (s) {
     if (str_(s.status).toUpperCase() === 'CANCELLED') return;
@@ -213,6 +214,76 @@ function wixScheduleRows_(sessions, services, cfg) {
     });
   });
   return rows.sort(function (a, b) { return (a.FirstDate + a.Start) < (b.FirstDate + b.Start) ? -1 : 1; });
+}
+
+/** Header of the "Wix purchases" tab the Wix sync writes. */
+const WIX_PURCHASE_HEADERS = ['OrderID', 'Student', 'Plan', 'Kind', 'Classes', 'Start', 'End', 'Status', 'Amount', 'CheckedInAs', 'WixMember'];
+
+/** 'Single Class = 1, 10 Class Pass = 10' → [{name: 'single class', classes: 1}, …] */
+function wixPacks_(cfg) {
+  return str_(cfg.wixPacks).split(',').map(function (part) {
+    const m = part.match(/^\s*(.*?)\s*=\s*(\d+)\s*$/);
+    return m && m[1] ? { name: m[1].toLowerCase(), classes: +m[2] } : null;
+  }).filter(Boolean);
+}
+
+function wixSkipWords_(cfg) {
+  return str_(cfg.wixSkip).toLowerCase() === 'none' ? [] :
+    str_(cfg.wixSkip).toLowerCase().split(',').map(function (w) { return w.trim(); }).filter(String);
+}
+
+/**
+ * Wix Pricing Plans orders → rows for the "Wix purchases" tab. Check-in reads
+ * them like the owner's Packages and Plans rows (see allPackages_ / allPlans_).
+ *   orders: [{ id, planName, status, payment, start: 'yyyy-MM-dd', end, memberId, amount }]
+ *           (dates already in the studio's time zone; end '' = runs until cancelled)
+ *   emails: { <memberId>: login email }  (missing = not looked up; the row matches nobody)
+ * A plan named in wixPacks is a class pass: that many credits, valid Start → End.
+ * Any other plan covers every class from Start to End, like a monthly plan.
+ * Unfinished checkouts, refunded or failed payments, and plans matching
+ * wixSkip (e.g. Kids) are left out.
+ */
+function wixPurchaseRows_(orders, emails, cfg, book) {
+  const packs = wixPacks_(cfg);
+  const skip = wixSkipWords_(cfg);
+  const rows = [];
+  (orders || []).forEach(function (o) {
+    const status = str_(o.status).toUpperCase();
+    if (['ACTIVE', 'ENDED', 'CANCELED', 'PAUSED'].indexOf(status) < 0) return; // DRAFT/PENDING = never bought
+    if (['REFUNDED', 'FAILED'].indexOf(str_(o.payment).toUpperCase()) >= 0) return;
+    const plan = str_(o.planName);
+    const lower = plan.toLowerCase();
+    if (!plan || !dayStr_(o.start) || skip.some(function (w) { return lower.indexOf(w) >= 0; })) return;
+    const pack = packs.filter(function (p) { return lower.indexOf(p.name) >= 0; })[0];
+    const email = cleanEmail_((emails || {})[str_(o.memberId)]);
+    const student = email ? findStudentByEmail_(book || {}, email) : null;
+    rows.push({
+      OrderID: str_(o.id), Student: email, Plan: plan,
+      Kind: pack ? 'package' : 'plan', Classes: pack ? pack.classes : '',
+      Start: dayStr_(o.start), End: dayStr_(o.end), Status: status.toLowerCase(),
+      Amount: str_(o.amount) === '' ? '' : num_(o.amount, ''),
+      CheckedInAs: student ? str_(student.Name) : '', WixMember: str_(o.memberId),
+    });
+  });
+  return rows.sort(function (a, b) { return a.Start < b.Start ? 1 : a.Start > b.Start ? -1 : 0; });
+}
+
+/** The owner's Packages rows plus class passes bought on Wix. */
+function allPackages_(book) {
+  return (book.packages || []).concat((book.wixPurchases || []).filter(function (r) {
+    return str_(r.Kind) === 'package';
+  }).map(function (r) {
+    return { PackageID: r.OrderID, Student: r.Student, Classes: r.Classes, Purchased: r.Start, Expires: r.End, Amount: r.Amount, Note: 'Wix' };
+  }));
+}
+
+/** The owner's Plans rows plus plans bought on Wix. */
+function allPlans_(book) {
+  return (book.plans || []).concat((book.wixPurchases || []).filter(function (r) {
+    return str_(r.Kind) === 'plan';
+  }).map(function (r) {
+    return { PlanID: r.OrderID, Student: r.Student, Plan: r.Plan, Start: r.Start, End: r.End, Note: 'Wix' };
+  }));
 }
 
 function classIsOn_(c, day) {
@@ -306,7 +377,7 @@ function ledgerFor_(book, cfg, studentId, today) {
   const prices = {};
   classesFrom_(book, cfg).forEach(function (c) { prices[c.id] = c.price; });
 
-  const packages = (book.packages || []).filter(function (p) {
+  const packages = allPackages_(book).filter(function (p) {
     return resolveStudentId_(book, p.Student) === studentId && num_(p.Classes, 0) > 0;
   }).map(function (p) {
     return {
@@ -315,7 +386,7 @@ function ledgerFor_(book, cfg, studentId, today) {
     };
   });
 
-  const plans = (book.plans || []).filter(function (p) {
+  const plans = allPlans_(book).filter(function (p) {
     return resolveStudentId_(book, p.Student) === studentId;
   }).map(function (p) {
     return { label: str_(p.Plan) || 'Monthly plan', start: dayStr_(p.Start), end: dayStr_(p.End) };
@@ -459,12 +530,27 @@ function handleRequest_(book, req, now, io) {
   const cfg = configFrom_(book.config);
   const action = str_(req && req.action);
   if (action === 'ping') return { ok: true, studio: cfg.studioName, version: APP_VERSION };
-  if (action === 'checkin') return checkin_(book, cfg, req, now, io);
+  if (action === 'checkin') return checkin_(book, cfg, req, now, io, {});
   if (action === 'declarePayment') return declarePayment_(book, cfg, req, now, io);
   return { ok: false, error: 'Unknown request.' };
 }
 
-function checkin_(book, cfg, req, now, io) {
+/**
+ * The owner checks someone in from the Sheet's menu (no phone with them, or new
+ * at the door). Same rules as the page, except any class today can be picked
+ * at any time of day. Only Code.gs calls this; the web API can't reach it.
+ */
+function ownerCheckin_(book, req, now, io) {
+  return checkin_(book, configFrom_(book.config), req, now, io, { anyTimeToday: true, source: 'owner' });
+}
+
+/** Every class on today, earliest first. */
+function allClassesToday_(book, day) {
+  return classesFrom_(book, configFrom_(book.config)).filter(function (c) { return classIsOn_(c, day); })
+    .sort(function (a, b) { return a.start - b.start; });
+}
+
+function checkin_(book, cfg, req, now, io, opts) {
   const email = cleanEmail_(req.email);
   const name = str_(req.name).replace(/\s+/g, ' ').slice(0, 80);
   if (!validEmail_(email)) return { ok: false, status: 'needDetails', error: 'Please enter a valid email.' };
@@ -484,7 +570,10 @@ function checkin_(book, cfg, req, now, io) {
   const chatLink = /^https:\/\/\S+$/.test(cfg.chatLink) ? cfg.chatLink : '';
   const base = { ok: true, studio: cfg.studioName, student: studentView_(student), isNew: isNew, chatLink: chatLink };
   const classes = classesFrom_(book, cfg);
-  const avail = todaysClasses_(classes, now, cfg);
+  const avail = opts.anyTimeToday
+    ? allClassesToday_(book, now.date).map(function (c) { return { klass: c, open: true }; })
+    : todaysClasses_(classes, now, cfg);
+  const source = opts.source || codeSource_(req.code);
   const sid = str_(student.StudentID);
 
   // "I'm here for a class anyway": recorded for the owner to sort out, charged nothing. One per
@@ -498,7 +587,7 @@ function checkin_(book, cfg, req, now, io) {
     const row = {
       CheckinID: io.newId('C'), When: now.stamp, ClassDate: now.date,
       StudentID: sid, Student: str_(student.Name), ClassID: '', Class: '',
-      Price: '', Source: codeSource_(req.code), Status: UNSCHEDULED, Note: note,
+      Price: '', Source: source, Status: UNSCHEDULED, Note: note,
     };
     book.log.push(row);
     io.append('Log', row);
@@ -543,7 +632,7 @@ function checkin_(book, cfg, req, now, io) {
     const row = {
       CheckinID: io.newId('C'), When: now.stamp, ClassDate: now.date,
       StudentID: sid, Student: str_(student.Name), ClassID: c.id, Class: c.name,
-      Price: c.price, Source: codeSource_(req.code), Status: 'ok', Note: '',
+      Price: c.price, Source: source, Status: 'ok', Note: '',
     };
     book.log.push(row);
     io.append('Log', row);
@@ -616,6 +705,53 @@ function reviewItems_(book) {
   return unscheduledLog_(book).filter(function (l) { return dayStr_(l.ClassDate); }).map(function (l) {
     return { day: dayStr_(l.ClassDate), name: str_(l.Student), note: str_(l.Note), id: str_(l.CheckinID) };
   }).sort(function (a, b) { return a.day < b.day ? 1 : a.day > b.day ? -1 : 0; });
+}
+
+const COVERED_LABELS = { plan: 'plan', package: 'class pass', free: 'free class', dropin: 'drop-in' };
+
+/**
+ * The "Today" tab: every class today with who has checked in and how each is
+ * covered, plus anyone here for a class that isn't on the schedule. Code.gs
+ * rewrites it after each check-in, so the owner can glance at it in the Sheets app.
+ */
+function todayRows_(book, now) {
+  const cfg = configFrom_(book.config);
+  const log = liveLog_(book).filter(function (l) { return dayStr_(l.ClassDate) === now.date; });
+  const ledgers = {};
+  const ledger = function (sid) { return ledgers[sid] || (ledgers[sid] = ledgerFor_(book, cfg, sid, now.date)); };
+  const rows = [['Today, ' + fmtDay_(now.date) + ' — updated ' + fmtTime_(now.minutes) +
+    '. Rewritten after every check-in; edits here are overwritten.']];
+  const section = function (title, lines) {
+    rows.push([], [title, lines.length + ' checked in', '']);
+    lines.forEach(function (l) {
+      const led = ledger(str_(l.StudentID));
+      const item = led.items.filter(function (i) { return i.id === str_(l.CheckinID); })[0];
+      rows.push([str_(l.Student),
+        item ? COVERED_LABELS[item.covered] + (item.covered === 'dropin' ? ' ' + money_(item.price) : '') : '',
+        led.owed > 0 ? 'owes ' + money_(led.owed) + (led.pending ? ' (says they sent ' + money_(led.pending) + ')' : '') : '']);
+    });
+  };
+  const classes = allClassesToday_(book, now.date);
+  const seen = {};
+  classes.forEach(function (c) {
+    const mine = log.filter(function (l) { return str_(l.ClassID) === c.id; });
+    mine.forEach(function (l) { seen[str_(l.CheckinID)] = true; });
+    section(fmtTime_(c.start) + ' · ' + c.name, mine);
+  });
+  // Check-ins for a class no longer on today's schedule (cancelled in Wix afterwards), or rows the owner fixed by hand.
+  const other = {};
+  log.filter(function (l) { return !seen[str_(l.CheckinID)]; }).forEach(function (l) {
+    const k = str_(l.Class) || '(no class filled in)';
+    (other[k] = other[k] || []).push(l);
+  });
+  Object.keys(other).sort().forEach(function (k) { section(k, other[k]); });
+  const here = unscheduledLog_(book).filter(function (l) { return dayStr_(l.ClassDate) === now.date; });
+  if (here.length) {
+    rows.push([], ["Here for a class that isn't on the schedule", here.length + ' so far', '']);
+    here.forEach(function (l) { rows.push([str_(l.Student), str_(l.Note), '']); });
+  }
+  if (!classes.length && !log.length && !here.length) rows.push([], ['No classes today.']);
+  return rows;
 }
 
 /** The Dashboard tab as a 2-D array (ragged; Code.gs pads it). */

@@ -109,7 +109,10 @@ serves the same page with a changing `t` and `s`, so nothing else changes.)
 Be the first student: tap, enter your email and name, check in. Then in the Sheet:
 
 - A row appears in **Log** (and **Students**, the first time).
+- The **Today** tab shows you under the class, with how it was paid for. It's rewritten after
+  every check-in, so it's also what to look at in the Google Sheets phone app.
 - **Check-in → Refresh dashboard** shows you. The Dashboard also rebuilds whenever the Sheet opens.
+- **Check-in → Check someone in…** checks in a second (made-up) student from the Sheet.
 - **Check-in → Email me the weekly summary now** sends a sample.
 
 ## Handover: the studio's copy
@@ -142,10 +145,10 @@ running without you. Repeat steps 1–4, with these differences:
    - Once it verifies, tick **Enforce HTTPS**.
 4. **The sign:** write the studio's address to the NFC tag and QR code and test both.
 5. **Wix:** the owner (or the Wix co-owner) makes a separate key for the studio's copy and pastes
-   it into its Script Properties themselves (see [Connecting Wix](#connecting-wix-read-only-being-built)).
+   it into its Script Properties themselves (see [Connecting Wix](#connecting-wix-read-only)).
 6. Turn on the Monday email and nightly backups in the studio's Sheet, and make sure `ownerEmail`
-   in Config is the owner's. If Wix is connected, also choose **Get classes from Wix now (and
-   every hour)**. Do these menu items **signed in as the studio's account**: a trigger runs as
+   in Config is the owner's. If Wix is connected, also choose **Get classes and purchases from
+   Wix now (and every hour)**. Do these menu items **signed in as the studio's account**: a trigger runs as
    whoever turns it on, so if you click them as yourself they'd keep running under your account.
 
 Your dev copy stays as it is, for trying out changes before they reach the studio.
@@ -154,7 +157,10 @@ Your dev copy stays as it is, for trying out changes before they reach the studi
 
 | To… | Do this |
 |---|---|
-| Add or change a class | Edit **Schedule**. Set `Active` to `no` to pause one; `LastDate` ends it. |
+| See who's in class today | The **Today** tab: each class today, who checked in, and whether it was a plan, a class pass or a drop-in (and if they owe). It updates after every check-in, so it works in the Google Sheets phone app. |
+| Check in someone without their phone, or new at the door | **Check-in → Check someone in…** (on a computer). Type their email (or name), then pick the class. Any class today works, even after it ended. For another day, add a **Log** row by hand. |
+| Add or change a class | Edit **Schedule**. Set `Active` to `no` to pause one; `LastDate` ends it. (With Wix connected, change classes in Wix instead.) |
+| Sell a punch pass | Sold in person: a **Packages** row (e.g. `Classes` 10, with an `Expires` date if it has one). Sold on Wix: make it a Pricing Plan and add its name to `wixPacks` in **Config** (e.g. `Single Class = 1, 10 Class Pass = 10`); purchases then appear on their own. |
 | Put someone on a monthly plan | Add a row to **Plans**: pick the student, the `Plan` (`1 class/week` or `2 classes/week`) and the `Start` date. Their check-ins show as covered by the plan. When they stop, fill in `End`. Bill the plan in Venmo as you do now. |
 | Record a package someone bought | Add a row to **Packages**: pick the student, `Classes` (e.g. 10), `Purchased` date, optional `Expires`. Past drop-ins after the purchase date are covered automatically. |
 | Record a cash/Venmo payment for drop-ins | Add a row to **Payments** with the amount. |
@@ -193,7 +199,7 @@ Plans. Once connected, the class schedule comes from Wix and nobody has to type 
 
 1. **The key.** A Wix account owner or co-owner creates it in the
    [API Keys Manager](https://manage.wix.com/account/api-keys). Give it access to **this site
-   only**, with just the Bookings, Calendar, Pricing Plans and Contacts/Members permissions. Wix
+   only**, with just the Bookings, Calendar, Pricing Plans and **Read Members** permissions. Wix
    keys always allow changes as well as reads; the script itself only ever reads (`Wix.gs` lists
    the few read calls it's allowed to make).
 2. **Use a separate key per copy.** One key goes in the dev copy. The prod key is made at
@@ -214,9 +220,11 @@ Plans. Once connected, the class schedule comes from Wix and nobody has to type 
    appears after **Help**. Choose **Check-in → Test the Wix connection (read-only)**. (Or, in
    the editor, pick `wixTest` in the function dropdown and click **Run**.) The first run asks
    permission to "connect to an external service". It fills a **Wix preview** tab with the
-   classes, the next 7 days of sessions, the plans and a count of plan purchases (no names). If
-   a section says 403, the key is missing that permission or is for a different site.
-5. **Turn on the schedule.** Choose **Check-in → Get classes from Wix now (and every hour)**.
+   classes, the next 7 days of sessions, the plans, a count of plan purchases (no names) and
+   whether buyers can be matched to students. If a section says 403, the key is missing that
+   permission or is for a different site.
+5. **Turn on the schedule.** Choose **Check-in → Get classes and purchases from Wix now (and
+   every hour)**.
    It fills a **Wix schedule** tab with every class session in the next two weeks and keeps it
    up to date every hour, so new classes, holidays and cancellations in Wix reach check-in on
    their own. Check-in reads this tab together with **Schedule**:
@@ -229,6 +237,18 @@ Plans. Once connected, the class schedule comes from Wix and nobody has to type 
    - Prices: a Wix class with a fixed price uses it; "custom" prices use `dropInPrice`.
    - If Wix can't be reached, check-in keeps the last copy. Google emails the owner only if it
      has failed for a whole day.
+6. **Plan purchases** come along on the same hourly run, into a **Wix purchases** tab that
+   check-in reads like **Packages** and **Plans**:
+   - Plans named in `wixPacks` in **Config** are class passes: `Single Class = 1` means each
+     purchase is one prepaid class, so that student isn't asked to pay by Venmo at check-in.
+     Every other plan (e.g. Adult Monthly) covers all classes from its start to its end, like a
+     **Plans** row.
+   - Unfinished checkouts, refunded purchases and plans matching `wixSkip` (Kids) are left out.
+   - Each purchase is matched to a student by their Wix login email, so the key needs **Read
+     Members**. Without it the purchases are listed but match no one. `CheckedInAs` shows who
+     each one matched; a blank one means that email hasn't checked in yet (or used a different
+     email). If so, the owner can add a **Packages** or **Plans** row for them by hand.
+   - Don't edit this tab; to correct a purchase, change it in Wix.
 
 ## Updating: dev first, then prod
 

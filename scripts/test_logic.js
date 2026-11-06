@@ -538,4 +538,102 @@ test('two sessions of one class on the same day are separate check-ins', () => {
   assert.notStrictEqual(rows[0].ClassID, rows[1].ClassID);
 });
 
+// ------------------------------------------------------------ Wix purchases
+const ORDERS = [
+  { id: 'o1', planName: 'Single Class', status: 'ACTIVE', payment: 'PAID', start: '2026-10-30', end: '2026-11-29', memberId: 'm1', amount: '25' },
+  { id: 'o2', planName: 'Single Class', status: 'DRAFT', payment: '', start: '2026-10-30', end: '', memberId: 'm2' },
+  { id: 'o3', planName: 'Adult Monthly', status: 'ACTIVE', payment: 'PAID', start: '2026-10-15', end: '', memberId: 'm2', amount: '90' },
+  { id: 'o4', planName: 'Kids Monthly', status: 'ACTIVE', payment: 'PAID', start: '2026-10-15', end: '', memberId: 'm3' },
+  { id: 'o5', planName: 'Single Class', status: 'ACTIVE', payment: 'REFUNDED', start: '2026-10-30', end: '', memberId: 'm3' },
+  { id: 'o6', planName: 'Adult Monthly', status: 'ENDED', payment: 'PAID', start: '2026-08-01', end: '2026-09-01', memberId: 'm4' },
+];
+const EMAILS = { m1: 'Jess@Example.com', m2: 'sam@example.com' };
+const purchaseRows = (book, emails, cfgRows) => fn('wixPurchaseRows_')(ORDERS, emails == null ? EMAILS : emails, fn('configFrom_')(cfgRows || []), book || {});
+
+test('Wix purchases: passes become credits, other plans count as plans; drafts, refunds and kids are left out', () => {
+  const book = makeBook({ students: [{ StudentID: 'S1', Name: 'Jess Lee', Email: 'jess@example.com' }] });
+  const rows = purchaseRows(book);
+  same(rows.map((r) => [r.OrderID, r.Student, r.Kind, r.Classes, r.Start, r.End, r.Status, r.Amount, r.CheckedInAs]), [
+    ['o1', 'jess@example.com', 'package', 1, '2026-10-30', '2026-11-29', 'active', 25, 'Jess Lee'],
+    ['o3', 'sam@example.com', 'plan', '', '2026-10-15', '', 'active', 90, ''],
+    ['o6', '', 'plan', '', '2026-08-01', '2026-09-01', 'ended', '', ''],
+  ]);
+});
+
+test('wixPacks names the class passes and how many classes each holds', () => {
+  const rows = purchaseRows({}, {}, [{ Key: 'wixPacks', Value: 'Single Class = 1, Adult Monthly = 8' }]);
+  same(rows.map((r) => [r.OrderID, r.Kind, r.Classes]), [['o1', 'package', 1], ['o3', 'package', 8], ['o6', 'package', 8]]);
+});
+
+test('a Single Class bought on Wix covers a check-in instead of asking for Venmo', () => {
+  const book = makeBook({ students: [{ StudentID: 'S1', Name: 'Jess Lee', Email: 'jess@example.com' }] });
+  book.wixPurchases = purchaseRows(book);
+  const res = checkin(book, at(MON, '18:45'));
+  assert.strictEqual(res.status, 'ok');
+  assert.strictEqual(res.account.these.package, 1);
+  assert.strictEqual(res.account.owed, 0);
+  assert.strictEqual(res.account.pay, null);
+  // The second class that day is a drop-in: the pass held one class.
+  const res2 = checkin(book, at(MON, '19:45'), { classIds: ['K2'] });
+  assert.strictEqual(res2.account.owed, 20);
+});
+
+test('a monthly plan bought on Wix covers classes while it runs; without the email it matches nobody', () => {
+  const sam = { StudentID: 'S2', Name: 'Sam Park', Email: 'sam@example.com' };
+  const book = makeBook({ students: [sam] });
+  book.wixPurchases = purchaseRows(book);
+  const res = checkin(book, at(MON, '18:45'), { email: 'sam@example.com' });
+  assert.strictEqual(res.account.these.plan, 1);
+  assert.strictEqual(res.account.plan, 'Adult Monthly');
+  const noEmails = makeBook({ students: [sam] });
+  noEmails.wixPurchases = purchaseRows(noEmails, {});
+  assert.strictEqual(checkin(noEmails, at(MON, '18:45'), { email: 'sam@example.com' }).account.owed, 20);
+});
+
+// ----------------------------------------------------------- owner check-in
+test('the owner can check someone in to any class today, at any time, marked as owner', () => {
+  const book = makeBook();
+  const io = makeIo();
+  const late = at(MON, '23:30'); // Salsa ended at 8pm; far outside the page's window
+  assert.strictEqual(checkin(makeBook(), late).status, 'noClass');
+  const res = fn('ownerCheckin_')(book, { email: 'new@example.com', name: 'New Person', classIds: ['K1'] }, late, io);
+  assert.strictEqual(res.status, 'ok');
+  assert.strictEqual(book.log[0].Source, 'owner');
+  assert.strictEqual(book.log[0].Class, 'Salsa 1');
+  // Not a class today → refused. Again → already.
+  assert.strictEqual(fn('ownerCheckin_')(book, { email: 'new@example.com', classIds: ['K3'] }, late, io).ok, false);
+  assert.strictEqual(fn('ownerCheckin_')(book, { email: 'new@example.com', classIds: ['K1'] }, late, io).status, 'already');
+});
+
+test('the web API cannot ask for the owner\'s any-time check-in', () => {
+  const res = checkin(makeBook(), at(MON, '23:30'), { classIds: ['K1'], anyTimeToday: true, source: 'owner' });
+  assert.strictEqual(res.ok, false);
+});
+
+// ------------------------------------------------------------------ Today tab
+test('Today lists every class today with who came and how it was covered', () => {
+  const book = makeBook({ packages: [{ PackageID: 'PK1', Student: 'sam@example.com', Classes: 5, Purchased: '2026-10-01' }] });
+  checkin(book, at(MON, '18:45'));                                                   // Jess: drop-in
+  checkin(book, at(MON, '18:46'), { email: 'sam@example.com', name: 'Sam Park' }); // Sam: class pass
+  checkin(book, at(MON, '19:50'), { email: 'ana@example.com', name: 'Ana Ruiz', classIds: ['K2'] });
+  checkin(book, at(MON, '21:50'), { email: 'lee@example.com', name: 'Lee Kim', unscheduled: true, note: 'private lesson' });
+  const rows = fn('todayRows_')(book, at(MON, '22:00'));
+  const text = JSON.parse(JSON.stringify(rows)).filter((r) => r.length > 1);
+  same(text, [
+    ['7:00pm · Salsa 1', '2 checked in', ''],
+    ['Jess Lee', 'drop-in $20', 'owes $20'],
+    ['Sam Park', 'class pass', ''],
+    ['8:00pm · Bachata 2', '1 checked in', ''],
+    ['Ana Ruiz', 'drop-in $20', 'owes $20'],
+    ["Here for a class that isn't on the schedule", '1 so far', ''],
+    ['Lee Kim', 'private lesson', ''],
+  ]);
+  assert.ok(/^Today, Mon Nov 2 — updated 10:00pm/.test(rows[0][0]));
+});
+
+test('Today on a day with no classes says so', () => {
+  const rows = fn('todayRows_')(makeBook(), at('2026-11-03', '12:00'));
+  assert.strictEqual(rows[rows.length - 1][0], 'No classes today.');
+});
+
 console.log(passed + ' passed' + (process.exitCode ? ', some FAILED' : ''));

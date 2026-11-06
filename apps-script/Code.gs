@@ -12,7 +12,10 @@ const TAB_KEYS = { Config: 'config', Schedule: 'schedule', Students: 'students',
 // Written by the Wix sync (Wix.gs), never by hand; absent until it first runs. Defined here,
 // not in Wix.gs, because top-level code can't rely on another file having loaded first.
 const WIX_SCHEDULE_TAB = 'Wix schedule';
+const WIX_PURCHASES_TAB = 'Wix purchases';
 TAB_KEYS[WIX_SCHEDULE_TAB] = 'wixSchedule';
+TAB_KEYS[WIX_PURCHASES_TAB] = 'wixPurchases';
+const TODAY_TAB = 'Today';
 
 // ------------------------------------ web ------------------------------------
 
@@ -40,7 +43,14 @@ function doPost(e) {
   try {
     lock.waitLock(15000);
     const book = readBook_();
-    return json_(handleRequest_(book, req, nowParts_(), sheetIo_(book)));
+    const now = nowParts_();
+    const res = handleRequest_(book, req, now, sheetIo_(book));
+    // A new row was written: bring the Today tab up to date from what's already in memory.
+    const wrote = res.ok && (res.status === 'ok' || (res.status === 'unscheduled' && !res.already));
+    if (wrote) {
+      try { writeToday_(book, now); } catch (err) { console.warn('Today tab not updated: ' + err); }
+    }
+    return json_(res);
   } catch (err) {
     console.error(err && err.stack || err);
     return json_({ ok: false, error: 'Something went wrong on the studio side. Please try again.' });
@@ -160,6 +170,7 @@ function toCell_(v, tz) {
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Check-in')
+    .addItem('Check someone in…', 'checkInSomeone')
     .addItem('Refresh dashboard', 'refreshDashboard')
     .addItem('Email me the weekly summary now', 'sendWeeklySummary')
     .addItem('Back up now', 'backupNow')
@@ -167,7 +178,7 @@ function onOpen() {
     .addItem('Turn on the Monday email and nightly backups', 'installTriggers')
     .addItem('First-time setup', 'setup')
     .addItem('Test the Wix connection (read-only)', 'wixTest')
-    .addItem('Get classes from Wix now (and every hour)', 'wixSyncNow')
+    .addItem('Get classes and purchases from Wix now (and every hour)', 'wixSyncNow')
     .addToUi();
   try { refreshDashboard(); } catch (e) { /* setup has not run yet */ }
 }
@@ -223,6 +234,7 @@ function setup() {
     SpreadsheetApp.newDataValidation().requireValueInList(['ok', 'void', UNSCHEDULED], true).setAllowInvalid(true).build());
 
   if (!ss.getSheetByName('Dashboard')) ss.insertSheet('Dashboard', 0);
+  if (!ss.getSheetByName(TODAY_TAB)) ss.insertSheet(TODAY_TAB, 0); // first, so it's what the Sheets app opens to
   const extra = ss.getSheetByName('Sheet1');
   if (extra && extra.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(extra);
 
@@ -234,8 +246,24 @@ function setup() {
   refreshDashboard();
 }
 
+/** The Today tab (todayRows_ in Logic.gs). Cheap enough to run after every check-in. */
+function writeToday_(book, now) {
+  const rows = todayRows_(book, now);
+  const width = 3;
+  const grid = rows.map(function (r) { const out = r.slice(0, width); while (out.length < width) out.push(''); return out; });
+  const ss = ss_();
+  const sh = ss.getSheetByName(TODAY_TAB) || ss.insertSheet(TODAY_TAB, 0);
+  sh.clear();
+  sh.getRange(1, 1, grid.length, width).setValues(grid);
+  sh.getRange(1, 1).setFontStyle('italic').setFontColor('#666666');
+  grid.forEach(function (r, i) {
+    if (i > 0 && r[0] && /checked in$| so far$/.test(r[1])) sh.getRange(i + 1, 1, 1, width).setFontWeight('bold').setBackground('#ccf5f4');
+  });
+}
+
 function refreshDashboard() {
   const book = readBook_();
+  try { writeToday_(book, nowParts_()); } catch (e) { console.warn('Today tab not updated: ' + e); }
   const rows = dashboardRows_(book, nowParts_());
   const width = rows.reduce(function (w, r) { return Math.max(w, r.length); }, 1);
   const grid = rows.map(function (r) { const out = r.slice(); while (out.length < width) out.push(''); return out; });
@@ -245,11 +273,89 @@ function refreshDashboard() {
   sh.getRange(1, 1, grid.length, width).setValues(grid);
   sh.getRange(1, 1).setFontStyle('italic').setFontColor('#666666');
   grid.forEach(function (r, i) {
-    if (r[0] === 'Student' || r[0] === 'Last 14 days') sh.getRange(i + 1, 1, 1, width).setFontWeight('bold').setBackground('#f3eefc');
+    if (r[0] === 'Student' || r[0] === 'Last 14 days') sh.getRange(i + 1, 1, 1, width).setFontWeight('bold').setBackground('#ccf5f4');
   });
   const owesCol = rows[2].indexOf('Owes') + 1;
   if (grid.length > 3) sh.getRange(4, owesCol, grid.length - 3, 1).setNumberFormat('$#,##0.00;-$#,##0.00;""');
   sh.setFrozenRows(0);
+}
+
+/**
+ * Owner menu: check in a student who has no phone with them, or is new at the
+ * door. Asks who and which of today's classes, then applies the same rules as
+ * the page (a pass or plan covers it, otherwise it's a drop-in). For another
+ * day, the owner adds a row to Log by hand.
+ */
+function checkInSomeone() {
+  const ui = SpreadsheetApp.getUi();
+  const ask = function (title, text) {
+    const r = ui.prompt(title, text, ui.ButtonSet.OK_CANCEL);
+    return r.getSelectedButton() === ui.Button.OK ? r.getResponseText().trim() : null;
+  };
+  let book = readBook_();
+  const now = nowParts_();
+  const classes = allClassesToday_(book, now.date);
+  if (!classes.length) {
+    ui.alert('No classes on today\'s schedule. To record a class on another day, add a row to the Log tab by hand.');
+    return;
+  }
+
+  const who = ask('Check someone in', 'Their email, or their name as it appears in the Students tab:');
+  if (!who) return;
+  let email = '', name = '';
+  if (validEmail_(cleanEmail_(who))) {
+    email = cleanEmail_(who);
+    if (!findStudentByEmail_(book, email)) {
+      name = ask('New student', email + ' hasn\'t checked in before. Their name:');
+      if (!name) return;
+    }
+  } else {
+    const sid = resolveStudentId_(book, who);
+    const s = (book.students || []).filter(function (x) { return String(x.StudentID) === sid; })[0];
+    if (!s) {
+      ui.alert('No single student is called "' + who + '". Try their email (for someone new, their email and then their name).');
+      return;
+    }
+    email = cleanEmail_(s.Email);
+  }
+
+  let picked;
+  if (classes.length === 1) {
+    const c = classes[0];
+    if (ui.alert('Check in', 'Check ' + (name || who) + ' in to ' + c.name + ' at ' + fmtTime_(c.start) + '?', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+    picked = [c.id];
+  } else {
+    const list = classes.map(function (c, i) { return (i + 1) + '.  ' + fmtTime_(c.start) + '  ' + c.name; }).join('\n');
+    const nums = ask('Which class?', list + '\n\nType the number. For several, separate them with commas (e.g. 1, 2).');
+    if (!nums) return;
+    picked = nums.split(/[^0-9]+/).filter(String).map(Number).map(function (n) { return classes[n - 1]; });
+    if (!picked.length || picked.some(function (c) { return !c; })) {
+      ui.alert('Please type a number from the list.');
+      return;
+    }
+    picked = picked.map(function (c) { return c.id; });
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  let res;
+  try {
+    book = readBook_(); // fresh, in case a student checked in while the owner was typing
+    res = ownerCheckin_(book, { email: email, name: name, classIds: picked }, now, sheetIo_(book));
+    if (res.ok) writeToday_(book, now);
+  } finally {
+    lock.releaseLock();
+  }
+  if (!res.ok) {
+    ui.alert(res.error || 'That didn\'t work.');
+    return;
+  }
+  const t = res.account && res.account.these;
+  const how = !t ? '' : [t.plan ? 'covered by their plan' : '', t.package ? 'used ' + t.package + ' from their class pass' : '',
+    t.free ? 'free' : '', t.dropin ? 'drop-in, ' + t.dropinLabel : ''].filter(String).join('; ');
+  const done = res.checkins.map(function (c) { return c.name + (c.already ? ' (already checked in)' : ''); }).join(', ');
+  ui.alert('Checked in', res.student.name + ': ' + done + '.' + (how ? '\n' + how.charAt(0).toUpperCase() + how.slice(1) + '.' : '') +
+    (res.account && res.account.owed > 0 ? '\nThey owe ' + res.account.owedLabel + ' in total.' : ''), ui.ButtonSet.OK);
 }
 
 function sendWeeklySummary() {
