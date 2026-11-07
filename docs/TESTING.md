@@ -1,83 +1,75 @@
-# Testing the check-in, with a fellow student
+# Testing the check-in, with fellow students
 
 The first part is for you, the builder. Everything after **"For the tester"** can be sent to them
-as it is: copy it into a message, or send them a link to this file.
+as it is, with the links from your **Test links** tab pasted in where it says.
 
 ## Before you hand it out
 
 Everything runs on the **dev** copy: your Sheet, your Apps Script, your GitHub Pages address.
-Nothing the tester does reaches the studio's accounts.
+Nothing a tester does reaches the studio's accounts.
 
 1. Dev works end to end for you on your own phone (SETUP steps 1–5).
 2. In the dev Sheet's **Config**:
-   - `venmoHandle`: **your own** Venmo username, so a test payment could only ever reach you. The
-     tester is asked not to send one, but a slip then costs nothing.
+   - `venmoHandle`: **your own** Venmo username, so a test payment could only ever reach you.
+     Testers are asked not to send one, but a slip then costs nothing.
    - `chatLink`: blank, or a throwaway Telegram group, so the Join button can be tried.
-3. **Get classes and purchases from Wix now (and every hour)** has been run, so the real class
-   times are there. The tester tries it at the studio around a real class.
-4. The test sticker and QR code carry a code from **Make a code for a new sign or tag…** (SETUP
-   step 4). Fill in where they are in "For the tester" below.
-5. Afterwards, look at **Today**, **Log**, **Students** and **Payments** in the dev Sheet; each
-   step below says what should appear. Void the test rows (Log `Status` = `void`) when you're done,
-   or leave them: dev data never reaches the studio.
+   - `pageUrl`: your page's address (`https://<you>.github.io/rhythm-attendance/`).
+   - `testScenarios`: **yes**. This is what makes test links work. Never set it in the studio's copy.
+3. Choose **Check-in → Make test links for testers (dev copy)**. It fills a **Test links** tab
+   with one link per scenario plus **Start over**. Copy the lines into your message below.
+   Running it again gives the same links.
+
+**How test links work:** each one pretends that scenario's classes are on, placed around the
+moment it's tapped, so testers can try everything any day, at any hour, from anywhere. The page
+is exactly what a student sees (plus the DEV badge). The check-ins are real rows in your dev
+Sheet, with class names ending "(test)", so you can watch **Today**, **Log** and the
+**Dashboard** fill in. Several testers can use the same links: each is told apart by their email,
+and **Start over** only clears that tester's own test check-ins.
+
+Afterwards, set `testScenarios` back to **no** to switch every test link off at once. Test rows
+can stay: dev data never reaches the studio.
+
+The real sticker is still worth one tap at a real class, to test NFC and the Wix schedule.
 
 ---
 
 ## For the tester
 
-Thanks for trying this out! It's a test version of a check-in for the studio: you tap your phone
-on a sticker (or scan a QR code) by the door, and that's it, you're checked in. The owner gets a
-spreadsheet that fills itself in.
+Thanks for trying this out! It's a test version of a check-in for the studio. Normally you tap
+your phone on a sign by the door (or scan its QR code), and that's it: you're checked in. The
+owner gets a spreadsheet that fills itself in.
 
 **This is a test copy.** Nothing here is real: it doesn't use up any class, and it isn't the
-studio's records. Please **don't send any real Venmo payment**. Where it says to tap a Venmo
-button, check that Venmo opens with the right amount, then back out without paying.
+studio's records. Please **don't send any real Venmo payment**. Where a Venmo button appears,
+check that Venmo opens with the right amount, then back out without paying.
 
-- **The page:** use the test sticker or QR code below. Opening the page any other way (a
-  bookmark, typing the address) shows "Check in at the studio" on purpose.
-- **The test sticker / QR code:** _____________________
+Instead of the sign, you'll use the links below. Each one pretends a different situation is
+happening right now (a class about to start, two at once, and so on), so you can try them all from
+home, any time. Open them on your phone, one at a time, in this order. The first one asks for
+your email and name; after that your phone remembers you.
 
-### Things to try
+*(Paste the links from the Test links tab here: what happens, what to try, and the link.)*
 
-Try them in roughly this order. Some need you at the studio around a class time. Don't worry if
-you can't do them all.
+### Things to look out for as you go
 
-1. **First check-in.** Within half an hour before a class (or up to 90 minutes after it ends),
-   tap the sticker or scan the QR code. Enter your email, then your name.
-   *Expected:* "You're in", with the class name, and what you owe for it as a drop-in.
-2. **The Venmo button.** Tap **Pay $… with Venmo**. *Expected:* Venmo opens with the amount and
-   a note filled in. **Back out without paying.** Back on the page it asks whether the payment
-   went through: tap **Not yet**.
-3. **Second check-in, another day.** Tap the sticker again at the next class.
-   *Expected:* no typing at all. It recognises your phone and checks you straight in.
-4. **Tapping twice.** Tap the sticker again right after checking in.
-   *Expected:* "Already checked in". You're not checked in or charged twice.
-5. **Back-to-back classes**, if you stay for two in a row. *Expected:* you can tick both at once,
-   or add the second one under **Taking another class today?**
-6. **Too early or no class.** Tap the sticker when no class is about to start (e.g. on another day).
-   *Expected:* "No class to check in to right now" and when the next class is. Below that, under
-   **Here for a class that isn't listed?**, type a short note (e.g. "testing") and tap
-   **I'm here for a class**. *Expected:* "Thanks", and nothing to pay.
-7. **The group chat button**, if it shows. Tap it. *Expected:* it opens the chat invite, and the
-   button doesn't come back on later check-ins.
-8. **Switching person.** Tap **Not you? Switch person** at the bottom, and check in as yourself
-   again with the same email. *Expected:* it asks only for your email (your phone may fill it in).
-9. **Another phone or browser**, if you have one handy: an iPhone and an Android are the most
-   useful pair. Also try the QR code if you tapped the sticker before, or the other way round.
-
-### What to look out for
-
+- **Does each screen make sense for the situation the link describes?** That's the main thing.
+- Tap a link **twice**: the second time should say you're already checked in.
+- Tap the **Venmo** button once and back out: does Venmo open with the amount filled in? Back on
+  the page, tap **Not yet**.
+- Try **Not you? Switch person** at the bottom: it should ask only for your email.
+- If the group chat button shows, tap it: it shouldn't come back after that.
 - Anything confusing or worded strangely, even if it worked.
-- Anything slow: say roughly how long you waited.
-- Anything that looked broken on your screen: text cut off, buttons hard to tap, wrong colours
-  in dark mode.
-- Whether the sticker worked first time, or how you had to hold your phone.
+- Anything slow: roughly how long you waited.
+- Anything that looked broken: text cut off, buttons hard to tap, odd colours in dark mode.
+
+To go through it all again, tap **Start over**. It clears only your own test check-ins and makes
+your phone forget you, so the next link asks for your email again.
 
 ### Reporting a problem
 
 Send a message with:
 
-- **What you did** (which step above, and what you tapped).
+- **Which link** you tapped, and what you tapped on the page.
 - **What happened**, and what you expected instead.
 - **A screenshot** if you can.
 - **Your phone** (e.g. iPhone 13, Pixel 7), and the **time** it happened, so it can be found in

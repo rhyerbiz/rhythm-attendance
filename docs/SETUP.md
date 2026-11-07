@@ -159,8 +159,11 @@ running without you. Repeat steps 1–4, with these differences:
    in Config is the owner's. If Wix is connected, also choose **Get classes and purchases from
    Wix now (and every hour)**. Do these menu items **signed in as the studio's account**: a trigger runs as
    whoever turns it on, so if you click them as yourself they'd keep running under your account.
+7. Check `testScenarios` in the studio's Config is **no** (it starts that way), and make the
+   real sign's code with **Make a code for a new sign or tag…** (step 4).
 
-Your dev copy stays as it is, for trying out changes before they reach the studio.
+Your dev copy stays as it is, for trying out changes before they reach the studio. Testing with
+fellow students uses its test links: see [TESTING.md](TESTING.md).
 
 ## Day to day, for the owner
 

@@ -125,6 +125,12 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     Tags has an active code, a check-in needs one of them in `?t=`, checked before anything is
     written (`needTag` otherwise); the Log's Source is the tag's Name. No tags = anything goes
     (`static`/`direct`/`unverified`, as before). Codes live only in the Sheet, never the repo.
+11g. **Test links (dev only):** a Tags row with a `Scenario` (`TEST_SCENARIOS` in Logic.gs) makes
+    `checkin_` use `testClasses_` (pretend classes around now; ClassIDs `T-…`, names "(test)")
+    instead of the schedule. The `reset` scenario voids only that email's test rows and today's
+    declared payments (`resetTester_`, via `io.update`). All of it only works while Config
+    `testScenarios` is yes; never set it in prod. Menu "Make test links for testers" fills a
+    "Test links" tab. docs/TESTING.md is built around them.
 12. **The Sheet's `studioName` wins.** The page remembers the last name the API sent;
     `config.js` only covers a phone's first visit.
 13. **Backups:** `backupNow` (nightly trigger) copies the SCHEMA tabs — values only, no script —

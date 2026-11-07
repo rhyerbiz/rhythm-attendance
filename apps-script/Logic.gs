@@ -22,7 +22,7 @@ const SCHEMA = {
   Packages: ['PackageID', 'Student', 'Classes', 'Purchased', 'Expires', 'Amount', 'Note'],
   Plans: ['PlanID', 'Student', 'Plan', 'Start', 'End', 'Note'],
   Payments: ['PaymentID', 'Student', 'Amount', 'Date', 'For', 'Status', 'Method', 'Note'],
-  Tags: ['Code', 'Name', 'Active', 'Notes'],
+  Tags: ['Code', 'Name', 'Active', 'Notes', 'Scenario'],
 };
 
 const DEFAULT_CONFIG = {
@@ -37,6 +37,7 @@ const DEFAULT_CONFIG = {
   wixPacks: 'Single Class = 1',
   chatLink: '',
   pageUrl: '',
+  testScenarios: 'no',
 };
 
 const CONFIG_NOTES = {
@@ -48,6 +49,7 @@ const CONFIG_NOTES = {
   ownerEmail: 'Where the weekly summary goes. Blank = the account that owns this sheet.',
   lapsedAfterDays: 'A regular who has not been in for this many days shows as lapsed.',
   chatLink: "Invite link to the studio's group chat (e.g. a Telegram invite link). Students see a Join button after checking in. Blank = no button.",
+  testScenarios: 'Your dev copy only: yes lets the test links from "Make test links for testers" pretend classes are on. Leave it no in the studio\'s copy.',
   pageUrl: 'The check-in page\'s address (e.g. https://checkin.yourstudio.com/). Used to show the full address for a new sign\'s NFC tag and QR code.',
   wixPacks: 'Wix pricing plans that are class passes, with how many classes each, e.g. "Single Class = 1, 10 Class Pass = 10". A purchase becomes credits, like a Packages row. Any other Wix plan counts like a Plans row (covers every class while it runs).',
   wixSkip: 'Wix classes to leave out of check-in: words in the class name, separated by commas (e.g. Kids, Private). "none" = take them all.',
@@ -508,11 +510,85 @@ function accountView_(book, cfg, student, today, checkinIds) {
 
 // -------------------------------- requests ---------------------------------
 
-/** Active rows of the Tags tab: one per sign, sticker or totem, each with its own code. */
+/**
+ * Active rows of the Tags tab: one per sign, sticker or totem, each with its own code.
+ * A row with a Scenario is a test link (see TEST_SCENARIOS); those only count when Config
+ * testScenarios is yes, so they can never act in the studio's copy.
+ */
 function tagsFrom_(book) {
-  return (book.tags || []).filter(function (t) { return str_(t.Code) && !isNo_(t.Active); }).map(function (t) {
-    return { code: str_(t.Code), name: str_(t.Name) || str_(t.Code) };
+  const testing = /^(y|yes|true|on|1)$/i.test(configFrom_(book.config).testScenarios);
+  return (book.tags || []).filter(function (t) {
+    return str_(t.Code) && !isNo_(t.Active) && (!str_(t.Scenario) || testing);
+  }).map(function (t) {
+    return { code: str_(t.Code), name: str_(t.Name) || str_(t.Code), scenario: str_(t.Scenario).toLowerCase() };
   });
+}
+
+// --------------------------- test links (dev only) ---------------------------
+
+/**
+ * Scenarios a tester can try at any time of day, one link each. The dev API
+ * pretends the scenario's classes are on, placed around the moment of the tap
+ * (as the preview does); everything else is the real page and the real Sheet.
+ * Their check-ins have ClassIDs starting "T-" and class names ending "(test)".
+ */
+const TEST_SCENARIOS = [
+  { id: 'one', label: 'A class is about to start', try: 'Check in. You should be checked straight in, with what you owe for a drop-in.' },
+  { id: 'two', label: 'Two classes at the same time', try: 'Pick one or both classes.' },
+  { id: 'series', label: 'Staying for three classes in a row', try: 'Check in to the first, then add the others from "Taking another class today?"' },
+  { id: 'early', label: "You're early (class in 2 hours)", try: 'You can check in now, or not yet.' },
+  { id: 'late', label: 'You forgot: class ended 40 minutes ago', try: 'You should still be checked in.' },
+  { id: 'free', label: 'A free class', try: 'Check in. Nothing to pay.' },
+  { id: 'none', label: 'No class today', try: 'Try "Here for a class that isn\'t listed?" with a short note.' },
+  { id: 'reset', label: 'Start over', try: 'Clears your test check-ins (only yours) and makes this phone forget you.' },
+];
+
+/** The pretend classes for a scenario, around `now`, shaped like classFrom_() makes them. */
+function testClasses_(scenario, now, cfg) {
+  const base = Math.ceil(now.minutes / 5) * 5;
+  const mk = function (n, name, start, price, day) {
+    day = day || now.date;
+    return {
+      id: 'T-' + scenario + '-' + n, name: name + ' (test)', days: [dowOf_(day)],
+      start: Math.max(0, Math.min(start, 23 * 60)), minutes: 60, price: price == null ? cfg.dropInPrice : price,
+      active: true, first: day, last: day,
+    };
+  };
+  switch (scenario) {
+    case 'one': return [mk(1, 'Salsa', base + 10)];
+    case 'two': return [mk(1, 'Salsa', base + 10), mk(2, 'Bachata', base + 20)];
+    case 'series': return [mk(1, 'Salsa 1', base + 10), mk(2, 'Salsa 2', base + 70), mk(3, 'Styling Lab', base + 130)];
+    case 'early': return [mk(1, 'Salsa', base + 120)];
+    case 'late': return [mk(1, 'Salsa', base - 100)];
+    case 'free': return [mk(1, 'Open Practice', base + 5, 0)];
+    case 'none': return [mk(1, 'Salsa', 19 * 60, null, addDays_(now.date, 1))];
+    default: return [];
+  }
+}
+
+/**
+ * "Start over" for one tester: voids their test check-ins (never real ones,
+ * never anyone else's) and the payments they declared today, so what they owe
+ * resets too. Soft, like every delete here: Status = void.
+ */
+function resetTester_(book, student, now, io) {
+  const sid = str_(student.StudentID);
+  const testSources = {};
+  (book.tags || []).forEach(function (t) { if (str_(t.Scenario)) testSources[str_(t.Name) || str_(t.Code)] = true; });
+  let cleared = 0;
+  (book.log || []).forEach(function (l) {
+    const isTest = str_(l.ClassID).indexOf('T-') === 0 || testSources[str_(l.Source)];
+    if (str_(l.StudentID) !== sid || !isTest || str_(l.Status).toLowerCase() === 'void') return;
+    l.Status = 'void';
+    io.update('Log', l, { Status: 'void' });
+    cleared++;
+  });
+  (book.payments || []).forEach(function (p) {
+    if (resolveStudentId_(book, p.Student) !== sid || str_(p.Status).toLowerCase() !== 'declared' || dayStr_(p.Date) !== now.date) return;
+    p.Status = 'void';
+    io.update('Payments', p, { Status: 'void' });
+  });
+  return cleared;
 }
 
 /**
@@ -529,7 +605,7 @@ function codeSource_(book, code) {
   const tags = tagsFrom_(book);
   if (tags.length) {
     const tag = tags.filter(function (x) { return x.code === t; })[0];
-    return tag ? { ok: true, source: tag.name } : { ok: false };
+    return tag ? { ok: true, source: tag.name, scenario: tag.scenario } : { ok: false };
   }
   return { ok: true, source: !t ? 'direct' : t === 'static' ? 'static' : 'unverified' };
 }
@@ -577,6 +653,12 @@ function checkin_(book, cfg, req, now, io, opts) {
   if (!from.ok) return { ok: false, status: 'needTag', error: 'To check in, tap or scan the sign at the studio.' };
   if (!validEmail_(email)) return { ok: false, status: 'needDetails', error: 'Please enter a valid email.' };
 
+  // A tester's "Start over" link: only ever touches the student with this email.
+  if (from.scenario === 'reset') {
+    const who = findStudentByEmail_(book, email);
+    return { ok: true, studio: cfg.studioName, status: 'reset', cleared: who ? resetTester_(book, who, now, io) : 0 };
+  }
+
   // A returning student only needs their email; the name is asked for the first time only.
   let student = findStudentByEmail_(book, email);
   let isNew = false;
@@ -595,7 +677,8 @@ function checkin_(book, cfg, req, now, io, opts) {
   // The chat link is only ever sent to someone who has checked in, never put in the page itself.
   const chatLink = /^https:\/\/\S+$/.test(cfg.chatLink) ? cfg.chatLink : '';
   const base = { ok: true, studio: cfg.studioName, student: studentView_(student), isNew: isNew, chatLink: chatLink };
-  const classes = classesFrom_(book, cfg);
+  // A test link (dev only) swaps the real schedule for its scenario's pretend classes.
+  const classes = from.scenario ? testClasses_(from.scenario, now, cfg) : classesFrom_(book, cfg);
   const avail = opts.anyTimeToday
     ? allClassesToday_(book, now.date).map(function (c) { return { klass: c, open: true }; })
     : todaysClasses_(classes, now, cfg);
@@ -642,7 +725,11 @@ function checkin_(book, cfg, req, now, io, opts) {
     if (!open.length) {
       const next = nextClass_(classes, now, cfg);
       return Object.assign(base, {
-        status: 'noClass', next: next ? classView_(next.klass, next.day) : null,
+        // When check-in opens for it, as a real time ("6:30pm"), and whether that's today.
+        status: 'noClass', next: next ? Object.assign(classView_(next.klass, next.day), {
+          opens: fmtTime_(Math.max(0, next.klass.start - cfg.opensMinutesBefore)), today: next.day === now.date,
+          done: next.day === now.date && !!doneRow(next.klass), // already checked in to it, early
+        }) : null,
         later: avail.filter(function (a) { return !doneRow(a.klass); }).map(option),
       });
     }

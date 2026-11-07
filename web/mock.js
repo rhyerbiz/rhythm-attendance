@@ -35,6 +35,8 @@ window.MockBackend = (function () {
     }
     // Ended 40 minutes ago: someone who forgot, checking in on the way out.
     if (scenario === 'late') rows.push({ ClassID: 'K1', Class: 'Salsa Level 1', Days: today, Start: hhmm(base - 100), Minutes: 60 });
+    // Here two hours early: nothing open yet, but the class can already be picked.
+    if (scenario === 'early') rows.push({ ClassID: 'K1', Class: 'Salsa Level 1', Days: today, Start: hhmm(base + 120), Minutes: 60 });
     if (scenario === 'free') rows.push({ ClassID: 'K3', Class: 'Open Practice', Days: today, Start: hhmm(base + 5), Minutes: 90, Price: 0 });
     rows.push({ ClassID: 'K4', Class: 'West Coast Swing', Days: tomorrow, Start: '19:30', Minutes: 60 });
     return rows;
@@ -75,6 +77,7 @@ window.MockBackend = (function () {
     var io = {
       newId: function (p) { return p + Math.random().toString(36).slice(2, 10); },
       append: function () { /* rows are already in book */ },
+      update: function () { /* the row in book was already changed */ },
     };
     var res = handleRequest_(book, JSON.parse(JSON.stringify(req)), nowParts(), io);
     save(book);
@@ -96,6 +99,7 @@ window.MockBackend = (function () {
         '<option value="two">Two classes starting</option>' +
         '<option value="series">Series of three</option>' +
         '<option value="late">Forgot — class just ended</option>' +
+        '<option value="early">Early for a class later today</option>' +
         '<option value="free">Free class starting</option>' +
         '<option value="none">No class now</option>' +
       '</select>' +

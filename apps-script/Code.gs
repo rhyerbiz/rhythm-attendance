@@ -49,7 +49,7 @@ function doPost(e) {
     const now = nowParts_();
     const res = handleRequest_(book, req, now, sheetIo_(book));
     // A new row was written: bring the Today tab up to date from what's already in memory.
-    const wrote = res.ok && (res.status === 'ok' || (res.status === 'unscheduled' && !res.already));
+    const wrote = res.ok && (res.status === 'ok' || res.status === 'reset' || (res.status === 'unscheduled' && !res.already));
     if (wrote) {
       try { writeToday_(book, now); } catch (err) { console.warn('Today tab not updated: ' + err); }
     }
@@ -224,6 +224,15 @@ function sheetIo_(book) {
       cache.put(key, String(n + 1), 2 * 60 * 60); // only ever touched inside doPost's lock
       return true;
     },
+    // Changes cells of a row that was read from the Sheet (a tester's reset voids rows this way).
+    update: function (tab, row, fields) {
+      if (!row._row) return;
+      const sh = ss.getSheetByName(tab);
+      Object.keys(fields).forEach(function (h) {
+        const col = book.headers[tab].indexOf(h) + 1;
+        if (col) sh.getRange(row._row, col).setValue(toCell_(fields[h], tz));
+      });
+    },
     append: function (tab, row) {
       const headers = book.headers[tab];
       ss.getSheetByName(tab).appendRow(headers.map(function (h) { return toCell_(row[h], tz); }));
@@ -268,6 +277,7 @@ function onOpen() {
     .addSeparator()
     .addItem('Turn on the Monday email and nightly backups', 'installTriggers')
     .addItem('Make a code for a new sign or tag…', 'makeTagCode')
+    .addItem('Make test links for testers (dev copy)', 'makeTestLinks')
     .addItem('First-time setup', 'setup')
     .addItem('Test the Wix connection (read-only)', 'wixTest')
     .addItem('Get classes and purchases from Wix now (and every hour)', 'wixSyncNow')
@@ -471,10 +481,7 @@ function makeTagCode() {
   const r = ui.prompt('New sign or tag', 'A name for it, so the Log shows where each check-in came from (e.g. Front door, Totem 2):', ui.ButtonSet.OK_CANCEL);
   if (r.getSelectedButton() !== ui.Button.OK) return;
   const name = r.getResponseText().trim().slice(0, 40) || 'Sign';
-  // Letters only, so Sheets never mistakes a code for a number (like 12e45). 12 letters ≈ 48 random bits.
-  const code = Utilities.getUuid().replace(/-/g, '').slice(0, 12).replace(/[0-9a-f]/g, function (h) {
-    return 'abcdefghjkmnpqrs'.charAt(parseInt(h, 16));
-  });
+  const code = newTagCode_();
   const ss = ss_();
   const sh = ss.getSheetByName('Tags');
   if (!sh) { ui.alert('Run Check-in → First-time setup first; it adds the Tags tab.'); return; }
@@ -490,6 +497,64 @@ function makeTagCode() {
       '\n(Put the page address in pageUrl in Config and this shows it in full.)') +
     (first ? '\n\nThis is the first code, so from now on only signs with a code in the Tags tab can check people in. ' +
       'Rewrite any older sticker or QR code with its new address.' : ''), ui.ButtonSet.OK);
+}
+
+/** Letters only, so Sheets never mistakes a code for a number (like 12e45). 12 letters ≈ 48 random bits. */
+function newTagCode_() {
+  return Utilities.getUuid().replace(/-/g, '').slice(0, 12).replace(/[0-9a-f]/g, function (h) {
+    return 'abcdefghjkmnpqrs'.charAt(parseInt(h, 16));
+  });
+}
+
+const TEST_LINKS_TAB = 'Test links';
+
+/**
+ * Owner menu, dev copy only: one link per test scenario (TEST_SCENARIOS in
+ * Logic.gs), as Tags rows with a Scenario, listed in a "Test links" tab ready
+ * to copy into a message for testers. Running it again reuses the same links.
+ * Every tester can use the same links: each one is told apart by their email.
+ */
+function makeTestLinks() {
+  const ui = SpreadsheetApp.getUi();
+  const book = readBook_();
+  const cfg = configFrom_(book.config);
+  if (!/^(y|yes|true|on|1)$/i.test(cfg.testScenarios)) {
+    ui.alert('Test links only work in your dev copy, with testScenarios set to yes in Config. Set it there first (never in the studio\'s copy).');
+    return;
+  }
+  if (!cfg.pageUrl) { ui.alert('Put the check-in page\'s address in pageUrl in Config first.'); return; }
+  const ss = ss_();
+  const sh = ss.getSheetByName('Tags');
+  if (!sh) { ui.alert('Run Check-in → First-time setup first; it adds the Tags tab.'); return; }
+  let headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
+  if (headers.indexOf('Scenario') < 0) { // a Tags tab made before test links existed
+    sh.getRange(1, headers.length + 1).setValue('Scenario').setFontWeight('bold');
+    headers = headers.concat(['Scenario']);
+  }
+  const page = cfg.pageUrl.replace(/[?#].*$/, '').replace(/\/?$/, '/');
+  const rows = [
+    ['Test links for testers. Copy the lines below into a message: each tester taps one link at a time on their phone.'],
+    ['Each tester is told apart by the email they enter, so everyone can use the same links. Any time, any day: the classes are pretend ones around the moment they tap.'],
+    [],
+    ['#', 'What happens', 'What to try', 'Link'],
+  ];
+  TEST_SCENARIOS.forEach(function (s, i) {
+    const have = (book.tags || []).filter(function (t) { return String(t.Scenario).toLowerCase() === s.id && !isNo_(t.Active); })[0];
+    let code = have && String(have.Code);
+    if (!code) {
+      code = newTagCode_();
+      const row = { Code: code, Name: 'Test: ' + s.label, Active: 'yes', Notes: 'Test link, made ' + nowParts_().date, Scenario: s.id };
+      sh.appendRow(headers.map(function (h) { return textSafe_(row[h] == null ? '' : row[h]); }));
+    }
+    rows.push([i + 1, s.label, s.try, page + '?t=' + code]);
+  });
+  const out = ss.getSheetByName(TEST_LINKS_TAB) || ss.insertSheet(TEST_LINKS_TAB);
+  out.clear();
+  const grid = rows.map(function (r) { const c = r.slice(); while (c.length < 4) c.push(''); return c; });
+  out.getRange(1, 1, grid.length, 4).setValues(textSafeGrid_(grid));
+  out.getRange(4, 1, 1, 4).setFontWeight('bold').setBackground('#ccf5f4');
+  out.activate();
+  ss.toast('Test links are in the "' + TEST_LINKS_TAB + '" tab. Turn testScenarios back to no to switch them all off.', 'Test links', 10);
 }
 
 function sendWeeklySummary() {

@@ -207,6 +207,21 @@
     bindNotYou();
   }
 
+  // A tester's "Start over" link: their test check-ins are cleared, and this phone forgets them.
+  function viewReset(res) {
+    forgetMe();
+    try { localStorage.removeItem(CHAT_KEY); } catch (e) { /* nothing stored */ }
+    render(
+      '<div class="card center">' +
+        CHECK +
+        '<h1>Starting over</h1>' +
+        '<p>' + (res.cleared ? 'Your ' + res.cleared + ' test check-in' + (res.cleared > 1 ? 's are' : ' is') + ' cleared'
+          : 'You had no test check-ins to clear') + ', and this phone has forgotten you.</p>' +
+        '<p class="small muted">Tap any test link to try again. Only your own test check-ins were touched.</p>' +
+      '</div>'
+    );
+  }
+
   // Opened without a sign's code (a bookmark, a shared link, a retired QR code).
   function viewNeedTag() {
     render(
@@ -233,12 +248,19 @@
   function viewNoClass(me, res) {
     var next = res.next;
     var later = res.later || [];
+    // The next class is later today and can already be picked below: they're early, not stuck.
+    var early = next && next.today && later.some(function (o) { return o.id === next.id; });
+    var opensLine = !next ? '' : next.done
+      ? 'You\'re already checked in for it. See you there!'
+      : early
+        ? 'Check in now below, or tap the sign again any time from ' + esc(next.opens) + '.'
+        : 'Check-in opens at ' + esc(next.opens) + (next.today ? '.' : ' that day.');
     render(
       '<div class="card center">' +
-        '<h1>No class to check in to right now</h1>' +
+        '<h1>' + (next && next.done ? 'You\'re all set' : early ? 'You\'re early' : 'No class to check in to right now') + '</h1>' +
         (next
-          ? '<p>Next up: <b>' + esc(next.name) + '</b><br>' + esc(next.dayLabel) + ' at ' + esc(next.time) + '</p>' +
-            '<p class="small muted">Check-in opens a little before class starts.</p>'
+          ? '<p>Next up: <b>' + esc(next.name) + '</b><br>' + (next.today ? 'Today' : esc(next.dayLabel)) + ' at ' + esc(next.time) + '</p>' +
+            '<p class="small muted">' + opensLine + '</p>'
           : '<p class="muted">There are no classes on the schedule this week.</p>') +
         (res.isNew ? '<p class="small muted" style="margin-top:14px">You\'re all set up — next time it\'s just a tap.</p>' : '') +
       '</div>' +
@@ -389,6 +411,7 @@
         if (res.status === 'choose') return viewChoose(me, res);
         if (res.status === 'noClass') return viewNoClass(me, res);
         if (res.status === 'unscheduled') return viewUnscheduled(me, res);
+        if (res.status === 'reset') return viewReset(res);
         viewDone(me, res);
       })
       .catch(function () {

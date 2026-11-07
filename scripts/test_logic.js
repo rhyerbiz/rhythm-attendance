@@ -160,10 +160,22 @@ test('no class: says what is next, including later in the week', () => {
   assert.strictEqual(res.status, 'noClass');
   assert.strictEqual(res.next.name, 'Salsa 1');
   assert.strictEqual(res.next.day, MON);
+  // A real time for when check-in opens (Salsa at 7pm, opening 30 minutes before), and whether it's today.
+  assert.strictEqual(res.next.opens, '6:30pm');
+  assert.strictEqual(res.next.today, true);
   res = checkin(makeBook(), at(MON, '22:45'));
   assert.strictEqual(res.next.name, 'Salsa 1');
   assert.strictEqual(res.next.day, '2026-11-04');
+  assert.strictEqual(res.next.opens, '6:30pm');
+  assert.strictEqual(res.next.today, false);
   assert.strictEqual(res.later.length, 0);
+  res = checkin(makeBook({ config: [{ Key: 'opensMinutesBefore', Value: '45' }] }), at(MON, '12:00'));
+  assert.strictEqual(res.next.opens, '6:15pm');
+  // Checked in early to tonight's class, then tapped again at lunch: the page can say they're all set.
+  const early = makeBook();
+  assert.strictEqual(checkin(early, at(MON, '12:00')).next.done, false);
+  checkin(early, at(MON, '12:01'), { classIds: ['K1'] });
+  assert.strictEqual(checkin(early, at(MON, '12:05')).next.done, true);
   // A brand-new student who taps between classes is still remembered.
   const book = makeBook();
   checkin(book, at(MON, '12:00'));
@@ -670,6 +682,63 @@ test('the owner can check someone in to any class today, at any time, marked as 
 test('the web API cannot ask for the owner\'s any-time check-in', () => {
   const res = checkin(makeBook(), at(MON, '23:30'), { classIds: ['K1'], anyTimeToday: true, source: 'owner' });
   assert.strictEqual(res.ok, false);
+});
+
+// ------------------------------------------------------------------ test links
+const TEST_TAGS = [
+  { Code: 'realsigncode', Name: 'Front door', Active: 'yes' },
+  { Code: 'testonecodex', Name: 'Test: one', Active: 'yes', Scenario: 'one' },
+  { Code: 'testtwocodex', Name: 'Test: two', Active: 'yes', Scenario: 'two' },
+  { Code: 'testnonecode', Name: 'Test: none', Active: 'yes', Scenario: 'none' },
+  { Code: 'testresetcod', Name: 'Test: reset', Active: 'yes', Scenario: 'reset' },
+];
+const testBook = (on) => makeBook({ tags: TEST_TAGS, config: [{ Key: 'dropInPrice', Value: '20' }, { Key: 'testScenarios', Value: on ? 'yes' : 'no' }] });
+function updIo() { const io = makeIo(); io.updated = []; io.update = (tab, row, f) => io.updated.push([tab, row.CheckinID || row.PaymentID, f]); return io; }
+
+test('a test link pretends its classes are on, at any hour, with real check-ins in the Log', () => {
+  const book = testBook(true);
+  const res = checkin(book, at('2026-11-03', '10:02'), { code: { t: 'testonecodex' } }); // a Tuesday morning, no real class
+  assert.strictEqual(res.status, 'ok');
+  assert.strictEqual(res.checkins[0].name, 'Salsa (test)');
+  assert.strictEqual(res.checkins[0].time, '10:15am');
+  assert.strictEqual(book.log[0].ClassID, 'T-one-1');
+  assert.strictEqual(book.log[0].Source, 'Test: one');
+  assert.strictEqual(res.account.owed, 20);
+  assert.strictEqual(checkin(book, at('2026-11-03', '10:02'), { code: { t: 'testtwocodex' } }).status, 'choose');
+  const none = checkin(book, at('2026-11-03', '10:02'), { code: { t: 'testnonecode' } });
+  assert.strictEqual(none.status, 'noClass');
+  assert.strictEqual(none.next.day, '2026-11-04');
+});
+
+test('test links do nothing unless testScenarios is yes; the real sign still works', () => {
+  const book = testBook(false);
+  assert.strictEqual(checkin(book, at(MON, '18:55'), { code: { t: 'testonecodex' } }).status, 'needTag');
+  assert.strictEqual(checkin(book, at(MON, '18:55'), { code: { t: 'testresetcod' } }).status, 'needTag');
+  assert.strictEqual(checkin(book, at(MON, '18:55'), { code: { t: 'realsigncode' } }).status, 'ok');
+});
+
+test('"Start over" voids only that tester\'s test check-ins and today\'s declared payments', () => {
+  const book = testBook(true);
+  checkin(book, at(MON, '18:55'), { code: { t: 'realsigncode' } });                                              // Jess, real
+  checkin(book, at(MON, '18:56'), { code: { t: 'testonecodex' } });                                              // Jess, test
+  checkin(book, at(MON, '18:57'), { code: { t: 'testnonecode' }, unscheduled: true, note: 'x' });                // Jess, test (unscheduled)
+  checkin(book, at(MON, '18:58'), { code: { t: 'testonecodex' }, email: 'sam@example.com', name: 'Sam Park' }); // Sam, test
+  fn('handleRequest_')(book, { action: 'declarePayment', email: 'jess@example.com', amount: 20 }, at(MON, '19:00'), makeIo());
+  const io = updIo();
+  const res = fn('handleRequest_')(book, { action: 'checkin', email: 'jess@example.com', code: { t: 'testresetcod' } }, at(MON, '19:05'), io);
+  assert.strictEqual(res.status, 'reset');
+  assert.strictEqual(res.cleared, 2);
+  same(book.log.map((l) => [l.Student, l.ClassID, l.Status]), [
+    ['Jess Lee', 'K1', 'ok'], ['Jess Lee', 'T-one-1', 'void'], ['Jess Lee', '', 'void'], ['Sam Park', 'T-one-1', 'ok'],
+  ]);
+  assert.strictEqual(book.payments[0].Status, 'void');
+  assert.strictEqual(io.updated.length, 3);
+  // After the reset the same test link checks in afresh.
+  assert.strictEqual(checkin(book, at(MON, '19:06'), { code: { t: 'testonecodex' } }).status, 'ok');
+  // An unknown email resets nothing and isn't made a student.
+  const n = book.students.length;
+  assert.strictEqual(fn('handleRequest_')(book, { action: 'checkin', email: 'new@example.com', code: { t: 'testresetcod' } }, at(MON, '19:07'), updIo()).cleared, 0);
+  assert.strictEqual(book.students.length, n);
 });
 
 // ------------------------------------------------------------------ Today tab
