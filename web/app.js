@@ -147,7 +147,17 @@
   // --------------------------------------------------------------- views
   // Email first: a returning student whose phone forgot them just picks their
   // email from autofill. The name is asked only when the studio doesn't know the email.
+  // While someone types their email, wake the API up, so Google has started the script by the
+  // time they tap Check in. Once per page load; the answer doesn't matter.
+  var warmed = false;
+  function warmUp() {
+    if (warmed || MOCK) return;
+    warmed = true;
+    api({ action: 'ping' }).catch(function () { /* only a head start */ });
+  }
+
   function viewRegister(prefill, error, askName) {
+    warmUp();
     render(
       '<form class="card" id="reg" novalidate>' +
         (askName

@@ -37,6 +37,9 @@ function doPost(e) {
   } catch (err) {
     return json_({ ok: false, error: 'Bad request.' });
   }
+  // The page pings while a new student types their email, so Google has the script warmed up by
+  // the time they tap Check in. Answered without the lock or the Sheet.
+  if (req && req.action === 'ping') return json_({ ok: true, version: APP_VERSION });
   // One lock around read → decide → write, so a double tap cannot slip a
   // second check-in in between the duplicate check and the append.
   const lock = LockService.getScriptLock();
@@ -65,15 +68,19 @@ function json_(obj) {
 
 // ----------------------------------- sheet -----------------------------------
 
+// Opened once per run: in the web app there's no "active" spreadsheet, and opening it by ID
+// is one of the slowest calls there is, so it must not happen again for every helper.
+let SS_ = null, TZ_ = null;
 function ss_() {
+  if (SS_) return SS_;
   const active = SpreadsheetApp.getActiveSpreadsheet();
-  if (active) return active;
+  if (active) return (SS_ = active);
   const id = PropertiesService.getScriptProperties().getProperty('spreadsheetId');
   if (!id) throw new Error('Run setup() once from the Apps Script editor first.');
-  return SpreadsheetApp.openById(id);
+  return (SS_ = SpreadsheetApp.openById(id));
 }
 
-function tz_() { return ss_().getSpreadsheetTimeZone(); }
+function tz_() { return TZ_ || (TZ_ = ss_().getSpreadsheetTimeZone()); }
 
 function nowParts_() {
   const d = new Date(), tz = tz_();
@@ -97,9 +104,68 @@ function cell_(v, tz) {
   return s.slice(11) === '00:00:00' ? s.slice(0, 10) : s;
 }
 
-/** Every tab, read once, as arrays of objects keyed by header. */
+// Date columns, by header. The fast read gets dates as day numbers and needs to know which
+// columns hold them (a Price of 20 and a date are both just numbers there).
+const DATE_HEADERS = ['When', 'ClassDate', 'FirstSeen', 'Purchased', 'Expires', 'End', 'Date', 'FirstDate', 'LastDate'];
+const DATE_HEADERS_BY_TAB = { Plans: ['Start'] }; // Schedule's Start is a time of day, not a date
+
+/** A Sheets day number (days since 1899-12-30, in the Sheet's own wall-clock time) → Logic.gs's strings. */
+function serialToText_(n) {
+  const ms = Math.round(n * 86400) * 1000 - 25569 * 86400000;
+  const iso = new Date(ms).toISOString(); // UTC here is just a calendar: no time zone is applied
+  if (n < 1) return iso.slice(11, 16);    // a time on its own
+  return iso.slice(11, 19) === '00:00:00' ? iso.slice(0, 10) : iso.slice(0, 10) + ' ' + iso.slice(11, 19);
+}
+
+/**
+ * Every tab as arrays of objects keyed by header, in ONE call to the Sheets API
+ * (reading tab by tab took seconds). Falls back to the tab-by-tab read if the
+ * Sheets advanced service isn't available.
+ */
 function readBook_() {
-  const ss = ss_(), tz = ss.getSpreadsheetTimeZone();
+  const ss = ss_();
+  let ranges;
+  try {
+    const have = ss.getSheets().map(function (s) { return s.getName(); });
+    const tabs = Object.keys(TAB_KEYS).filter(function (t) { return have.indexOf(t) >= 0; });
+    const res = Sheets.Spreadsheets.Values.batchGet(ss.getId(), {
+      ranges: tabs.map(function (t) { return "'" + t.replace(/'/g, "''") + "'"; }),
+      valueRenderOption: 'UNFORMATTED_VALUE',
+      dateTimeRenderOption: 'SERIAL_NUMBER',
+    });
+    ranges = {};
+    tabs.forEach(function (t, i) { ranges[t] = (res.valueRanges[i] && res.valueRanges[i].values) || []; });
+  } catch (e) {
+    console.warn('Fast read failed, reading tab by tab: ' + e);
+    return readBookSlow_();
+  }
+  const book = { headers: {} };
+  Object.keys(TAB_KEYS).forEach(function (tab) {
+    const values = ranges[tab] || [];
+    const headers = values.length ? values[0].map(function (h) { return String(h).trim(); }) : SCHEMA[tab];
+    const dates = DATE_HEADERS.concat(DATE_HEADERS_BY_TAB[tab] || []);
+    const rows = [];
+    for (let i = 1; i < values.length; i++) {
+      const v = values[i];
+      if (!v.some(function (x) { return x !== '' && x != null; })) continue;
+      const obj = { _row: i + 1 };
+      headers.forEach(function (h, j) {
+        if (!h) return;
+        const x = j < v.length ? v[j] : '';
+        obj[h] = typeof x === 'number' && dates.indexOf(h) >= 0 ? serialToText_(x) : x;
+      });
+      rows.push(obj);
+    }
+    book.headers[tab] = headers;
+    book[TAB_KEYS[tab]] = rows;
+  });
+  fillClassIds_(ss, book);
+  return book;
+}
+
+/** The original tab-by-tab read; only used if the fast one fails. */
+function readBookSlow_() {
+  const ss = ss_(), tz = tz_();
   const book = { headers: {} };
   Object.keys(TAB_KEYS).forEach(function (tab) {
     const sh = ss.getSheetByName(tab);
@@ -147,7 +213,7 @@ function fillClassIds_(ss, book) {
 const NEW_STUDENTS_PER_HOUR = 40;
 
 function sheetIo_(book) {
-  const ss = ss_(), tz = ss.getSpreadsheetTimeZone();
+  const ss = ss_(), tz = tz_();
   return {
     newId: function (prefix) { return prefix + Utilities.getUuid().replace(/-/g, '').slice(0, 10); },
     allowNewStudent: function () {
@@ -271,8 +337,8 @@ function setup() {
 
   if (Session.getScriptTimeZone() !== ss.getSpreadsheetTimeZone()) {
     SpreadsheetApp.getUi().alert('Time zones differ: the script uses ' + Session.getScriptTimeZone() +
-      ' and the sheet uses ' + ss.getSpreadsheetTimeZone() + '. Check-ins follow the sheet. To avoid confusion, set ' +
-      'Project Settings → Time zone in the Apps Script editor to match File → Settings in the sheet.');
+      ' and the sheet uses ' + ss.getSpreadsheetTimeZone() + '. Check-ins follow the sheet. Set File → Settings → Time zone ' +
+      'in the sheet to match, or change timeZone in apps-script/appsscript.json and push again.');
   }
   refreshDashboard();
 }
@@ -284,12 +350,17 @@ function writeToday_(book, now) {
   const grid = rows.map(function (r) { const out = r.slice(0, width); while (out.length < width) out.push(''); return out; });
   const ss = ss_();
   const sh = ss.getSheetByName(TODAY_TAB) || ss.insertSheet(TODAY_TAB, 0);
+  // This runs inside a check-in, so it's a fixed handful of calls however many classes there are:
+  // the values and every row's formatting each go in one call.
+  const head = grid.map(function (r, i) { return i > 0 && !!r[0] && /checked in$| so far$/.test(r[1]); });
+  const each = function (fn) { return grid.map(function (r, i) { return r.map(function () { return fn(i); }); }); };
   sh.clear();
-  sh.getRange(1, 1, grid.length, width).setValues(textSafeGrid_(grid));
-  sh.getRange(1, 1).setFontStyle('italic').setFontColor('#666666');
-  grid.forEach(function (r, i) {
-    if (i > 0 && r[0] && /checked in$| so far$/.test(r[1])) sh.getRange(i + 1, 1, 1, width).setFontWeight('bold').setBackground('#ccf5f4');
-  });
+  sh.getRange(1, 1, grid.length, width)
+    .setValues(textSafeGrid_(grid))
+    .setFontWeights(each(function (i) { return head[i] ? 'bold' : 'normal'; }))
+    .setBackgrounds(each(function (i) { return head[i] ? '#ccf5f4' : null; }))
+    .setFontStyles(each(function (i) { return i === 0 ? 'italic' : 'normal'; }))
+    .setFontColors(each(function (i) { return i === 0 ? '#666666' : null; }));
 }
 
 function refreshDashboard() {
