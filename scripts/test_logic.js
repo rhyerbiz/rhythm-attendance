@@ -462,12 +462,33 @@ test('an over-long email is refused, and new sign-ups stop when the hourly cap i
   assert.strictEqual(fn('handleRequest_')(book, { action: 'checkin', email: 'jess@example.com' }, at(MON, '18:55'), io).ok, true);
 });
 
-test('owed adds up across several unpaid drop-ins', () => {
+test('owed adds up across several unpaid drop-ins, each one listed', () => {
   const book = makeBook();
   checkin(book, at(MON, '18:55'));
   const res = checkin(book, at('2026-11-04', '18:55'));
   assert.strictEqual(res.account.owed, 40);
-  assert.ok(decodeURIComponent(res.account.pay.url).includes('class drop-ins'));
+  // The page can list what the $40 is for, and the Venmo note names both classes.
+  same(res.account.unpaid.map((u) => [u.day, u.className, u.label, u.now]), [
+    ['Mon Nov 2', 'Salsa 1', '$20', false], ['Wed Nov 4', 'Salsa 1', '$20', true],
+  ]);
+  assert.ok(decodeURIComponent(res.account.pay.url).includes('Salsa 1 Mon Nov 2; Salsa 1 Wed Nov 4'));
+});
+
+test('payments pay off the oldest drop-ins first, so only what is still owed is listed', () => {
+  const book = makeBook();
+  checkin(book, at(MON, '18:55'));
+  checkin(book, at('2026-11-04', '18:55'));
+  book.payments.push({ PaymentID: 'P1', Student: 'jess@example.com', Amount: 25, Date: '2026-11-04', Status: 'confirmed' });
+  const res = checkin(book, at('2026-11-09', '18:55'));
+  assert.strictEqual(res.account.owed, 35);
+  // $25 paid: Nov 2 fully, Nov 4 $5 of $20. Left: $15 of Nov 4 and today's $20.
+  same(res.account.unpaid.map((u) => [u.day, u.amount, u.now]), [['Wed Nov 4', 15, false], ['Mon Nov 9', 20, true]]);
+  // Paid in full: nothing listed.
+  book.payments.push({ PaymentID: 'P2', Student: 'jess@example.com', Amount: 35, Date: '2026-11-09', Status: 'declared' });
+  const after = fn('accountView_')(book, fn('configFrom_')(book.config), book.students[0], '2026-11-09', []);
+  assert.strictEqual(after.owed, 0);
+  same(after.unpaid, []);
+  assert.strictEqual(after.pendingLabel, '$35');
 });
 
 // ---------------------------------------------------------------- reports

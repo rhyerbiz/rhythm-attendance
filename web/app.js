@@ -328,17 +328,32 @@
         (a.expiresSoon ? '<p class="small muted" style="margin:6px 0 0">Expires ' + esc(a.nextExpiry) + '</p>' : '') +
         (a.creditsLeft === 0 ? '<p class="small" style="margin:6px 0 0">' + (t.dropin ? 'Your package ran out — the rest are drop-ins.' : 'That was your last one — ask about a new package.') + '</p>' : ''));
     }
-    if (t.dropin) {
-      var what = t.dropin > 1 ? t.dropin + ' drop-ins' : 'Drop-in';
-      if (a.owed <= 0) {
-        rows.push('<div class="row"><span>' + what + ' ' + esc(t.dropinLabel) + '</span><span class="paid">Paid ✓</span></div>' +
-          (a.pending ? '<p class="small muted" style="margin:6px 0 0">Thanks! The studio will confirm your payment.</p>' : ''));
-      } else if (!a.pay) {
-        rows.push('<div class="row"><span>' + what + '</span><span class="amount">' + esc(a.owedLabel) + '</span></div>' +
-          '<p class="small muted" style="margin:6px 0 0">Please pay the studio before or after class.</p>');
+    var what = t.dropin > 1 ? t.dropin + ' drop-ins' : 'Drop-in';
+    // Just said "Yes, I paid": confirm what they actually sent, which may include earlier classes.
+    if (res.justPaid) {
+      rows.push('<div class="row"><span>Sent by Venmo</span><span class="paid">' + esc(res.justPaid) + ' ✓</span></div>' +
+        '<p class="small muted" style="margin:6px 0 0">Thanks! The studio will confirm your payment.</p>');
+    } else if (t.dropin && a.owed <= 0) {
+      rows.push('<div class="row"><span>' + what + ' ' + esc(t.dropinLabel) + '</span><span class="paid">Paid ✓</span></div>' +
+        (a.pending ? '<p class="small muted" style="margin:6px 0 0">The studio will confirm your payment.</p>' : ''));
+    }
+    // Anything owed, today's or carried forward from earlier unpaid classes: say exactly what it's for.
+    var unpaid = (a.owed > 0 && !res.justPaid && a.unpaid) || [];
+    if (unpaid.length) {
+      var earlier = unpaid.some(function (u) { return !u.now; });
+      var todayLabel = res.checkins && res.checkins[0] && res.checkins[0].dayLabel;
+      var when = function (u) { return u.now ? 'today' : u.day === todayLabel ? 'earlier today' : esc(u.day); };
+      var owedRows = (earlier || unpaid.length > 1)
+        ? '<p style="margin:0 0 6px"><b>' + (earlier ? 'Still to pay, including earlier classes' : 'To pay') + '</b></p>' +
+          '<ul class="owed">' + unpaid.map(function (u) {
+            return '<li><span>' + esc(u.className) + ' <span class="muted">' + when(u) + '</span></span><span>' + esc(u.label) + '</span></li>';
+          }).join('') + '</ul>' +
+          '<div class="row total"><span>Total</span><span class="amount">' + esc(a.owedLabel) + '</span></div>'
+        : '<div class="row"><span>' + what + '</span><span class="amount">' + esc(a.owedLabel) + '</span></div>';
+      if (!a.pay) {
+        rows.push(owedRows + '<p class="small muted" style="margin:6px 0 0">Please pay the studio before or after class.</p>');
       } else {
-        return '<div class="acct" id="paybox">' + rows.join('<hr>') + (rows.length ? '<hr>' : '') +
-          '<div class="row"><span>' + (a.owed > t.dropinTotal ? 'Due, including earlier classes' : what) + '</span><span class="amount">' + esc(a.pay.label) + '</span></div>' +
+        return '<div class="acct" id="paybox">' + rows.join('<hr>') + (rows.length ? '<hr>' : '') + owedRows +
           '<a class="btn venmo" id="venmo" href="' + esc(a.pay.url) + '" target="_blank" rel="noopener">Pay ' + esc(a.pay.label) + ' with Venmo</a>' +
           '<p class="small muted" style="margin:10px 0 0">Have a package or paying another way? Just let the studio know.</p>' +
           '</div>';
@@ -398,6 +413,7 @@
         .then(function (r) {
           if (!r.ok) throw new Error(r.error || 'Could not save that.');
           res.account = r.account;
+          res.justPaid = a.pay.label; // what they actually sent, earlier classes included
           viewDone(me, res);
         })
         .catch(function (err) {

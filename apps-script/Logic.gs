@@ -446,6 +446,17 @@ function ledgerFor_(book, cfg, studentId, today) {
     if (status === 'declared') pending = round2_(pending + amt);
   });
 
+  // Which drop-ins are still unpaid: payments aren't tied to classes, so they pay off the oldest
+  // first. What's left is what the page lists when a balance carries forward.
+  let credit = paid;
+  const unpaid = [];
+  items.forEach(function (i) {
+    if (i.covered !== 'dropin') return;
+    const covered = Math.min(credit, i.price);
+    credit = round2_(credit - covered);
+    if (i.price - covered > 0) unpaid.push({ id: i.id, day: i.day, className: i.className, amount: round2_(i.price - covered) });
+  });
+
   const valid = packages.filter(function (p) { return p.left > 0 && (!p.expires || p.expires >= today); });
   const expiries = valid.map(function (p) { return p.expires; }).filter(Boolean).sort();
   return {
@@ -456,6 +467,7 @@ function ledgerFor_(book, cfg, studentId, today) {
     plan: planOn(today) ? planOn(today).label : '',
     owed: round2_(charges - paid),   // negative = credit on account
     pending: pending,                 // declared by the student, not yet confirmed by the owner
+    unpaid: unpaid,                   // the drop-ins making up `owed`, oldest first
   };
 }
 
@@ -481,10 +493,22 @@ function accountView_(book, cfg, student, today, checkinIds) {
   const count = function (k) { return mine.filter(function (i) { return i.covered === k; }).length; };
   const dropins = mine.filter(function (i) { return i.covered === 'dropin'; });
   const dropinTotal = round2_(dropins.reduce(function (n, i) { return n + i.price; }, 0));
+  // What the balance is made of, so a carried-forward amount is never a mystery: each unpaid
+  // drop-in with its date, and whether it's one of the check-ins just made.
+  const unpaid = led.owed > 0 ? led.unpaid.map(function (u) {
+    return { day: fmtDay_(u.day), className: u.className, amount: u.amount, label: money_(u.amount), now: ids.indexOf(u.id) >= 0 };
+  }) : [];
   let pay = null;
   if (led.owed > 0 && cfg.venmoHandle) {
-    const what = dropins.length && led.owed === dropinTotal
-      ? dropins.map(function (i) { return i.className; }).join(' + ') + ' ' + fmtDay_(dropins[0].day) : 'class drop-ins';
+    // The Venmo note names what's being paid for, grouped by day: "Salsa 1 + Bachata 2 Mon Nov 2; Salsa 1 Wed Nov 4".
+    const byDay = [];
+    unpaid.forEach(function (u) {
+      const d = byDay.filter(function (x) { return x.day === u.day; })[0];
+      if (d) d.names.push(u.className); else byDay.push({ day: u.day, names: [u.className] });
+    });
+    const what = unpaid.length && unpaid.length <= 4
+      ? byDay.map(function (d) { return d.names.join(' + ') + ' ' + d.day; }).join('; ')
+      : unpaid.length + ' classes';
     pay = {
       amount: led.owed,
       label: money_(led.owed),
@@ -500,6 +524,8 @@ function accountView_(book, cfg, student, today, checkinIds) {
     owed: led.owed,
     owedLabel: money_(Math.abs(led.owed)),
     pending: led.pending,
+    pendingLabel: money_(led.pending),
+    unpaid: unpaid,
     these: mine.length ? {
       plan: count('plan'), package: count('package'), free: count('free'), dropin: dropins.length,
       dropinTotal: dropinTotal, dropinLabel: money_(dropinTotal),
