@@ -203,7 +203,7 @@ function wixWriteTab_(ss, tab, headers, rows, note) {
   try {
     const sh = ss.getSheetByName(tab) || ss.insertSheet(tab);
     sh.clear();
-    sh.getRange(1, 1, grid.length, grid[0].length).setNumberFormat('@').setValues(grid);
+    sh.getRange(1, 1, grid.length, grid[0].length).setNumberFormat('@').setValues(textSafeGrid_(grid));
     sh.getRange(1, 1, 1, grid[0].length).setFontWeight('bold');
     sh.setFrozenRows(1);
     sh.getRange('A1').setNote('Filled in from Wix every hour — edits here are overwritten. Last update: ' +
@@ -380,6 +380,6 @@ function wixWritePreview_(ss, rows) {
   const grid = rows.map(function (r) { const c = r.slice(); while (c.length < width) c.push(''); return c; });
   const sh = ss.getSheetByName(WIX_PREVIEW_TAB) || ss.insertSheet(WIX_PREVIEW_TAB);
   sh.clear();
-  sh.getRange(1, 1, grid.length, width).setNumberFormat('@').setValues(grid);
+  sh.getRange(1, 1, grid.length, width).setNumberFormat('@').setValues(textSafeGrid_(grid));
   sh.activate();
 }

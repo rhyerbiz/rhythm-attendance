@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#21ada8">
   <meta name="robots" content="noindex">
+  <!-- What the page may load and talk to: itself, the Google Font, and the Apps Script API
+       (script.google.com redirects each answer to script.googleusercontent.com). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'; object-src 'none'">
   <title>Check in</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,7 +17,7 @@
 <body>
   <header class="top">
     <!-- The studio's own logo (from rhythmdw.com). If it ever fails to load, the name shows instead. -->
-    <img class="logo" src="logo.png" alt="" width="560" height="153" onerror="this.parentNode.classList.add('nologo')">
+    <img class="logo" src="logo.png" alt="" width="560" height="153">
     <span id="studio"></span>
   </header>
   <main id="app" aria-live="polite">

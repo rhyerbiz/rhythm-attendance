@@ -111,6 +111,14 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
 11d. **Today tab** (`todayRows_`): rewritten from the in-memory book after every check-in that
     wrote a row (in `doPost`, inside the lock), on Refresh dashboard, and hourly by the Wix sync.
     It's the owner's view in the Sheets phone app, which has no custom menus.
+11e. **The API is open to anyone with the URL** (the repo is public too), so it never relies on
+    secrecy. Text from students or Wix goes into the Sheet through `textSafe_` (a leading `'`
+    on `= + - @`, so it can't run as a formula), including the Dashboard, Today and Wix tabs. The
+    answer carries only the student's first name. A declared payment can't exceed what's owed.
+    New students are capped per hour (`NEW_STUDENTS_PER_HOUR`, `io.allowNewStudent`). The page
+    has a CSP (`index.html`); a new external host needs adding there, and no inline handlers.
+    Known and accepted: anyone who knows a student's email can check in as them and see their
+    balance (low stakes; the passkey would fix it).
 12. **The Sheet's `studioName` wins.** The page remembers the last name the API sent;
     `config.js` only covers a phone's first visit.
 13. **Backups:** `backupNow` (nightly trigger) copies the SCHEMA tabs — values only, no script —

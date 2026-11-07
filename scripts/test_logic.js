@@ -233,7 +233,7 @@ test('the student is matched by email, case-insensitively, keeping the stored na
   const res = checkin(book, at(MON, '19:40'), { email: ' JESS@example.COM ', name: 'J' });
   assert.strictEqual(res.status, 'ok');
   assert.strictEqual(book.students.length, 1);
-  assert.strictEqual(res.student.name, 'Jess Lee');
+  assert.strictEqual(res.student.name, 'Jess'); // first name only: anyone can type any email
 });
 
 test('bad details are refused', () => {
@@ -250,7 +250,8 @@ test('email first: a known email needs no name; a new one asks for it', () => {
   checkin(book, at(MON, '18:55'));
   const back = checkin(book, at(MON, '18:56'), { name: '' });
   assert.strictEqual(back.status, 'already');
-  assert.strictEqual(back.student.name, 'Jess Lee');
+  assert.strictEqual(back.student.name, 'Jess');
+  assert.strictEqual(book.students[0].Name, 'Jess Lee');
 });
 
 test('code source is recorded', () => {
@@ -386,6 +387,34 @@ test('silly payment amounts are refused', () => {
   const h = fn('handleRequest_');
   assert.strictEqual(h(book, { action: 'declarePayment', email: 'jess@example.com', amount: -5 }, at(MON, '19:00'), makeIo()).ok, false);
   assert.strictEqual(h(book, { action: 'declarePayment', email: 'nobody@example.com', amount: 5 }, at(MON, '19:00'), makeIo()).ok, false);
+});
+
+test('a declared payment can\'t be more than is owed, and nothing is recorded when nothing is owed', () => {
+  const book = makeBook();
+  checkin(book, at(MON, '18:55'));
+  const h = fn('handleRequest_');
+  // Someone who knows Jess's email can't wipe out more than she owes, or build her a credit.
+  assert.strictEqual(h(book, { action: 'declarePayment', email: 'jess@example.com', amount: 500 }, at(MON, '19:00'), makeIo()).ok, false);
+  assert.strictEqual(book.payments.length, 0);
+  assert.strictEqual(h(book, { action: 'declarePayment', email: 'jess@example.com', amount: 20 }, at(MON, '19:00'), makeIo()).ok, true);
+  // A second "Yes, I paid" (a lost answer, a double tap) doesn't record a second payment.
+  const again = h(book, { action: 'declarePayment', email: 'jess@example.com', amount: 20 }, at(MON, '19:01'), makeIo());
+  assert.strictEqual(again.ok, true);
+  assert.strictEqual(again.account.owed, 0);
+  assert.strictEqual(book.payments.length, 1);
+});
+
+test('an over-long email is refused, and new sign-ups stop when the hourly cap is reached', () => {
+  assert.strictEqual(checkin(makeBook(), at(MON, '18:55'), { email: 'a'.repeat(250) + '@example.com' }).ok, false);
+  const book = makeBook();
+  const io = Object.assign(makeIo(), { allowNewStudent: () => false });
+  const res = fn('handleRequest_')(book, { action: 'checkin', name: 'Bot', email: 'bot1@example.com' }, at(MON, '18:55'), io);
+  assert.strictEqual(res.ok, false);
+  assert.strictEqual(res.status, 'busy');
+  assert.strictEqual(book.students.length, 0);
+  // Students the studio already knows aren't affected.
+  checkin(book, at(MON, '18:50'));
+  assert.strictEqual(fn('handleRequest_')(book, { action: 'checkin', email: 'jess@example.com' }, at(MON, '18:55'), io).ok, true);
 });
 
 test('owed adds up across several unpaid drop-ins', () => {

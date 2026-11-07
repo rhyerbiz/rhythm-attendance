@@ -142,10 +142,22 @@ function fillClassIds_(ss, book) {
   });
 }
 
+// New students allowed per hour, across everyone. A real studio signs up a handful; this only
+// stops a script from filling the Sheet with made-up ones.
+const NEW_STUDENTS_PER_HOUR = 40;
+
 function sheetIo_(book) {
   const ss = ss_(), tz = ss.getSpreadsheetTimeZone();
   return {
     newId: function (prefix) { return prefix + Utilities.getUuid().replace(/-/g, '').slice(0, 10); },
+    allowNewStudent: function () {
+      const cache = CacheService.getScriptCache();
+      const key = 'newStudents:' + Utilities.formatDate(new Date(), tz, 'yyyyMMddHH');
+      const n = Number(cache.get(key) || 0);
+      if (n >= NEW_STUDENTS_PER_HOUR) return false;
+      cache.put(key, String(n + 1), 2 * 60 * 60); // only ever touched inside doPost's lock
+      return true;
+    },
     append: function (tab, row) {
       const headers = book.headers[tab];
       ss.getSheetByName(tab).appendRow(headers.map(function (h) { return toCell_(row[h], tz); }));
@@ -163,7 +175,20 @@ function toCell_(v, tz) {
   if (typeof v !== 'string') return v;
   if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(v)) return Utilities.parseDate(v, tz, 'yyyy-MM-dd HH:mm:ss');
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return Utilities.parseDate(v, tz, 'yyyy-MM-dd');
-  return v;
+  return textSafe_(v);
+}
+
+/**
+ * Text that came from a student (a name, a note) or from Wix is written as text, never as a
+ * formula: Sheets runs anything starting with = (and treats + - @ specially), so a "name" like
+ * =IMPORTDATA(…) could otherwise act inside the owner's Sheet. The leading ' is how Sheets
+ * marks text; it isn't part of the value read back.
+ */
+function textSafe_(v) {
+  return typeof v === 'string' && /^[=+\-@]/.test(v) ? "'" + v : v;
+}
+function textSafeGrid_(grid) {
+  return grid.map(function (r) { return r.map(textSafe_); });
 }
 
 // ----------------------------------- owner -----------------------------------
@@ -254,7 +279,7 @@ function writeToday_(book, now) {
   const ss = ss_();
   const sh = ss.getSheetByName(TODAY_TAB) || ss.insertSheet(TODAY_TAB, 0);
   sh.clear();
-  sh.getRange(1, 1, grid.length, width).setValues(grid);
+  sh.getRange(1, 1, grid.length, width).setValues(textSafeGrid_(grid));
   sh.getRange(1, 1).setFontStyle('italic').setFontColor('#666666');
   grid.forEach(function (r, i) {
     if (i > 0 && r[0] && /checked in$| so far$/.test(r[1])) sh.getRange(i + 1, 1, 1, width).setFontWeight('bold').setBackground('#ccf5f4');
@@ -270,7 +295,7 @@ function refreshDashboard() {
   const ss = ss_();
   const sh = ss.getSheetByName('Dashboard') || ss.insertSheet('Dashboard', 0);
   sh.clear();
-  sh.getRange(1, 1, grid.length, width).setValues(grid);
+  sh.getRange(1, 1, grid.length, width).setValues(textSafeGrid_(grid));
   sh.getRange(1, 1).setFontStyle('italic').setFontColor('#666666');
   grid.forEach(function (r, i) {
     if (r[0] === 'Student' || r[0] === 'Last 14 days') sh.getRange(i + 1, 1, 1, width).setFontWeight('bold').setBackground('#ccf5f4');
@@ -354,7 +379,7 @@ function checkInSomeone() {
   const how = !t ? '' : [t.plan ? 'covered by their plan' : '', t.package ? 'used ' + t.package + ' from their class pass' : '',
     t.free ? 'free' : '', t.dropin ? 'drop-in, ' + t.dropinLabel : ''].filter(String).join('; ');
   const done = res.checkins.map(function (c) { return c.name + (c.already ? ' (already checked in)' : ''); }).join(', ');
-  ui.alert('Checked in', res.student.name + ': ' + done + '.' + (how ? '\n' + how.charAt(0).toUpperCase() + how.slice(1) + '.' : '') +
+  ui.alert('Checked in', ((findStudentByEmail_(book, email) || {}).Name || res.student.name) + ': ' + done + '.' + (how ? '\n' + how.charAt(0).toUpperCase() + how.slice(1) + '.' : '') +
     (res.account && res.account.owed > 0 ? '\nThey owe ' + res.account.owedLabel + ' in total.' : ''), ui.ButtonSet.OK);
 }
 

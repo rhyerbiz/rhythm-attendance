@@ -374,7 +374,17 @@
       });
   }
 
+  // If the logo can't load, show the studio's name instead (handled here, not inline, for the page's CSP).
+  function logoFallback() {
+    var logo = document.querySelector('.logo');
+    if (!logo) return;
+    var fail = function () { logo.parentNode.classList.add('nologo'); };
+    if (logo.complete && !logo.naturalWidth) fail();
+    else logo.addEventListener('error', fail);
+  }
+
   function start() {
+    logoFallback();
     setStudio();
     // Never mistake the test copy for the real one.
     if (!MOCK && ENV.name === 'dev') {

@@ -60,7 +60,7 @@ function num_(v, dflt) { const n = typeof v === 'number' ? v : parseFloat(str_(v
 function round2_(n) { return Math.round(n * 100) / 100; }
 function isNo_(v) { return /^(n|no|false|0|off|inactive)$/i.test(str_(v)); }
 function cleanEmail_(v) { return str_(v).toLowerCase(); }
-function validEmail_(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+function validEmail_(v) { return v.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
 
 /** 'Mon, Wed' / 'Tuesday & Thursday' / 'sat' → [1, 3] (ISO: 1 = Monday). */
 function parseDays_(v) {
@@ -517,8 +517,10 @@ function codeSource_(code) {
   return 'unverified';
 }
 
+// Anyone can type any email into the page, so the answer carries only the first name
+// (all the page shows), never the full name stored in Students.
 function studentView_(s) {
-  return { id: str_(s.StudentID), name: str_(s.Name), email: cleanEmail_(s.Email) };
+  return { id: str_(s.StudentID), name: str_(s.Name).split(' ')[0], email: cleanEmail_(s.Email) };
 }
 
 /**
@@ -560,6 +562,10 @@ function checkin_(book, cfg, req, now, io, opts) {
   let isNew = false;
   if (!student) {
     if (!name) return { ok: false, status: 'needDetails', needName: true, error: 'Please enter your name.' };
+    // A cap on sign-ups (Code.gs: so many an hour), so a script can't fill the Sheet with made-up students.
+    if (io.allowNewStudent && !io.allowNewStudent()) {
+      return { ok: false, status: 'busy', error: 'Lots of new sign-ups right now. Please let your instructor know you\'re here.' };
+    }
     student = { StudentID: io.newId('S'), Name: name, Email: email, FirstSeen: now.stamp };
     book.students.push(student);
     io.append('Students', student);
@@ -652,7 +658,12 @@ function declarePayment_(book, cfg, req, now, io) {
   const student = findStudentByEmail_(book, cleanEmail_(req.email));
   if (!student) return { ok: false, error: "We couldn't find you — please check in first." };
   const amount = round2_(num_(req.amount, 0));
-  if (!(amount > 0 && amount <= 2000)) return { ok: false, error: 'That amount looks wrong.' };
+  if (!(amount > 0)) return { ok: false, error: 'That amount looks wrong.' };
+  // The page only ever offers to pay what's owed. Anything more would let someone who knows
+  // a student's email wipe out what that student owes, or build them a credit.
+  const owed = ledgerFor_(book, cfg, str_(student.StudentID), now.date).owed;
+  if (owed <= 0) return { ok: true, account: accountView_(book, cfg, student, now.date, [].concat(req.checkinIds || [])) };
+  if (amount > owed) return { ok: false, error: 'That amount looks wrong.' };
   // Recorded by name to match the owner's dropdown, unless the name is shared — then by email.
   const who = resolveStudentId_(book, student.Name) === str_(student.StudentID) ? str_(student.Name) : cleanEmail_(student.Email);
   const row = {

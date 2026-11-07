@@ -19,11 +19,13 @@ http.createServer((req, res) => {
     return res.end();
   }
   const file = path.join(ROOT, decodeURIComponent(url.pathname));
-  if (!file.startsWith(ROOT)) { res.writeHead(403); return res.end(); }
+  // Only files inside the repo (a sibling folder like ../rhythm-attendance-old must not match), never .git or clasp settings.
+  if (!file.startsWith(ROOT + path.sep) || /[\\/]\.(git|clasp)/.test(file.slice(ROOT.length))) { res.writeHead(403); return res.end(); }
   const target = fs.existsSync(file) && fs.statSync(file).isDirectory() ? path.join(file, 'index.html') : file;
   fs.readFile(target, (err, data) => {
     if (err) { res.writeHead(404); return res.end('Not found'); }
     res.writeHead(200, { 'Content-Type': (TYPES[path.extname(target)] || 'application/octet-stream') + '; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(data);
   });
-}).listen(PORT, () => console.log('Preview: http://localhost:' + PORT + '/'));
+// This computer only: the repo holds deploy settings that aren't for the rest of the network.
+}).listen(PORT, '127.0.0.1', () => console.log('Preview: http://localhost:' + PORT + '/'));
