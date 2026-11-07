@@ -101,22 +101,44 @@
     on('#notyou', 'click', function () { forgetMe(); viewRegister({}); });
   }
 
-  // "Join our group chat": shown until this phone taps it. A new link (Config chatLink) shows again.
+  // "Join our group chat": shown until this phone taps Join or "Hide this". A new link (Config chatLink)
+  // shows again. After a few check-ins it shrinks to one quiet line, so regulars aren't nagged.
+  var CHAT_SEEN_KEY = 'rhythm.chatSeen'; // {link, n}: how many check-ins this phone has been shown this link
+  var CHAT_FULL_TIMES = 3;
+  var chatCounted = false;              // count once per visit, however many times the screen redraws
+  function chatSeen(link) {
+    var seen = { link: link, n: 0 };
+    try {
+      var s = JSON.parse(localStorage.getItem(CHAT_SEEN_KEY) || 'null');
+      if (s && s.link === link) seen = s;
+      if (!chatCounted) { chatCounted = true; seen.n++; localStorage.setItem(CHAT_SEEN_KEY, JSON.stringify(seen)); }
+    } catch (e) { /* no storage: always the full card */ }
+    return seen.n;
+  }
   function chatHtml(res) {
     var link = res && res.chatLink;
     if (!link) return '';
     try { if (localStorage.getItem(CHAT_KEY) === link) return ''; } catch (e) { /* show it */ }
+    var hide = '<button class="linkish" id="chathide" type="button">Already in the group? Hide this</button>';
+    if (chatSeen(link) > CHAT_FULL_TIMES) {
+      return '<p class="foot small chatmini" id="chatcard">' +
+        '<a id="chat" href="' + esc(link) + '" target="_blank" rel="noopener">Join the studio\'s group chat</a>' +
+        ' · <button class="linkish" id="chathide" type="button">Hide</button></p>';
+    }
     return '<div class="card center" id="chatcard">' +
       '<p style="margin:0 0 2px"><b>Join the studio\'s group chat</b></p>' +
       '<p class="small muted">Class updates, news and practice partners.</p>' +
       '<a class="btn secondary" id="chat" href="' + esc(link) + '" target="_blank" rel="noopener">Join the group chat</a>' +
+      '<p class="foot" style="margin:10px 0 0">' + hide + '</p>' +
       '</div>';
   }
   function bindChat(res) {
-    on('#chat', 'click', function () {
+    var done = function (delay) {
       try { localStorage.setItem(CHAT_KEY, res.chatLink); } catch (e) { /* asked again next time */ }
-      setTimeout(function () { var c = app.querySelector('#chatcard'); if (c) c.remove(); }, 400);
-    });
+      setTimeout(function () { var c = app.querySelector('#chatcard'); if (c) c.remove(); }, delay);
+    };
+    on('#chat', 'click', function () { done(400); });
+    on('#chathide', 'click', function () { done(0); });
   }
 
   // A list of today's classes to tick. Ones already checked in to show as done.

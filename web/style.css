@@ -187,6 +187,10 @@ input:focus { outline: none; border-color: var(--teal); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .foot { text-align: center; margin-top: 4px; }
+.chatmini { color: var(--muted); margin: 0 0 6px; }
+.chatmini a { color: var(--brand); }
+.chatmini .linkish { font-size: inherit; }
+@media (prefers-color-scheme: dark) { .chatmini a { color: var(--teal); } }
 
 @media (prefers-reduced-motion: reduce) {
   .check, .check path, .spinner { animation-duration: 0.01s; }
