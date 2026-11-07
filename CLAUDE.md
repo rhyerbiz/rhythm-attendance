@@ -83,6 +83,11 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
    rejected payment corrects everything at once. A check-in on a day the student has a monthly
    plan (Plans tab: Start → End, blank End = ongoing) is covered by the plan; otherwise it uses a
    credit from the valid package expiring soonest; otherwise it's a drop-in.
+   Payments pay for the check-ins in their `Covers` column first ("Yes, I paid" fills it in);
+   payments without it (typed by the owner) pay off the oldest unpaid drop-ins. **The student
+   page only ever asks for the check-ins just made** (`account.due`); older unpaid classes are
+   the owner's to follow up via the Dashboard and Monday email (an old "debt" may be a cash
+   payment not typed in yet). `account.owed` (the whole balance) is for the owner's menu only.
    **Deliberately not built yet** (to ask the owner after the gift is given): weekly limits on
    plans (1 vs 2 classes a week isn't enforced), tracking whether the monthly fee is paid (the
    owner bills plans in Venmo), and plans limited to specific classes.

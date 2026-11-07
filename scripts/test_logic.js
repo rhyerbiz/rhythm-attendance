@@ -462,43 +462,43 @@ test('an over-long email is refused, and new sign-ups stop when the hourly cap i
   assert.strictEqual(fn('handleRequest_')(book, { action: 'checkin', email: 'jess@example.com' }, at(MON, '18:55'), io).ok, true);
 });
 
-test('owed adds up across several unpaid drop-ins, each one listed', () => {
+test('a check-in asks only for its own classes; older unpaid ones are left to the owner', () => {
   const book = makeBook();
-  checkin(book, at(MON, '18:55'));
-  const res = checkin(book, at('2026-11-04', '18:55'));
-  assert.strictEqual(res.account.owed, 40);
-  // The page can list what the $40 is for, and the Venmo note names both classes.
-  same(res.account.unpaid.map((u) => [u.day, u.className, u.label, u.now]), [
-    ['Mon Nov 2', 'Salsa 1', '$20', false], ['Wed Nov 4', 'Salsa 1', '$20', true],
-  ]);
-  assert.ok(decodeURIComponent(res.account.pay.url).includes('Salsa 1 Mon Nov 2; Salsa 1 Wed Nov 4'));
-  // Each carries its class time, so two sessions of one class can be told apart.
-  assert.strictEqual(res.account.unpaid[0].time, '7:00pm');
+  checkin(book, at(MON, '18:55'));                      // Monday: not paid
+  const res = checkin(book, at('2026-11-04', '18:55')); // Wednesday
+  assert.strictEqual(res.account.owed, 40);             // the whole balance, for the owner
+  assert.strictEqual(res.account.due, 20);              // what the page asks for: today's class
+  assert.strictEqual(res.account.pay.amount, 20);
+  const note = decodeURIComponent(res.account.pay.url);
+  assert.ok(note.includes('Salsa 1 Wed Nov 4') && !note.includes('Mon Nov 2'));
 });
 
-test('a Wix class that has left the synced schedule still shows its time in the unpaid list', () => {
+test('a Wix class that has left the synced schedule keeps its start time in the ledger', () => {
   const book = makeBook({ schedule: [] });
   book.students.push({ StudentID: 'S1', Name: 'Jess Lee', Email: 'jess@example.com' });
   book.log.push({ CheckinID: 'C1', ClassDate: '2026-10-26', StudentID: 'S1', Student: 'Jess Lee', ClassID: 'Wc0549875-1915', Class: 'Dance 101', Price: 20, Status: 'ok' });
-  const a = fn('accountView_')(book, fn('configFrom_')(book.config), book.students[0], MON, []);
-  same(a.unpaid.map((u) => [u.className, u.day, u.time]), [['Dance 101', 'Mon Oct 26', '7:15pm']]);
+  const led = fn('ledgerFor_')(book, fn('configFrom_')(book.config), 'S1', MON);
+  same(led.unpaid.map((u) => [u.className, u.day, u.start]), [['Dance 101', '2026-10-26', 19 * 60 + 15]]);
 });
 
-test('payments pay off the oldest drop-ins first, so only what is still owed is listed', () => {
+test('"Yes, I paid" pays for the check-ins it names; payments without that pay off the oldest first', () => {
   const book = makeBook();
-  checkin(book, at(MON, '18:55'));
-  checkin(book, at('2026-11-04', '18:55'));
-  book.payments.push({ PaymentID: 'P1', Student: 'jess@example.com', Amount: 25, Date: '2026-11-04', Status: 'confirmed' });
-  const res = checkin(book, at('2026-11-09', '18:55'));
-  assert.strictEqual(res.account.owed, 35);
-  // $25 paid: Nov 2 fully, Nov 4 $5 of $20. Left: $15 of Nov 4 and today's $20.
-  same(res.account.unpaid.map((u) => [u.day, u.amount, u.now]), [['Wed Nov 4', 15, false], ['Mon Nov 9', 20, true]]);
-  // Paid in full: nothing listed.
-  book.payments.push({ PaymentID: 'P2', Student: 'jess@example.com', Amount: 35, Date: '2026-11-09', Status: 'declared' });
-  const after = fn('accountView_')(book, fn('configFrom_')(book.config), book.students[0], '2026-11-09', []);
-  assert.strictEqual(after.owed, 0);
-  same(after.unpaid, []);
-  assert.strictEqual(after.pendingLabel, '$35');
+  checkin(book, at(MON, '18:55'));                      // Monday: not paid
+  const wed = checkin(book, at('2026-11-04', '18:55'));
+  const h = fn('handleRequest_');
+  const paid = h(book, { action: 'declarePayment', email: 'jess@example.com', amount: 20, checkinIds: [wed.checkins[0].checkinId] }, at('2026-11-04', '19:00'), makeIo());
+  assert.strictEqual(paid.ok, true);
+  assert.strictEqual(book.payments[0].Covers, wed.checkins[0].checkinId);
+  assert.strictEqual(paid.account.due, 0);              // Wednesday is paid…
+  const led = () => fn('ledgerFor_')(book, fn('configFrom_')(book.config), book.students[0].StudentID, '2026-11-04');
+  same(led().unpaid.map((u) => [u.day, u.amount]), [['2026-11-02', 20]]); // …Monday still isn't
+  // More than Wednesday owed is refused; a second "Yes, I paid" records nothing.
+  assert.strictEqual(h(book, { action: 'declarePayment', email: 'jess@example.com', amount: 40, checkinIds: [wed.checkins[0].checkinId] }, at('2026-11-04', '19:01'), makeIo()).ok, true);
+  assert.strictEqual(book.payments.length, 1);
+  // The owner types in $25 cash with no Covers: it pays Monday, and $5 is left as credit.
+  book.payments.push({ PaymentID: 'P2', Student: 'jess@example.com', Amount: 25, Date: '2026-11-05', Status: 'confirmed' });
+  same(led().unpaid, []);
+  assert.strictEqual(led().owed, -5);
 });
 
 // ---------------------------------------------------------------- reports

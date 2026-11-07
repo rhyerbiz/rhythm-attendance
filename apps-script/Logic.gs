@@ -21,7 +21,7 @@ const SCHEMA = {
   Log: ['CheckinID', 'When', 'ClassDate', 'StudentID', 'Student', 'ClassID', 'Class', 'Price', 'Source', 'Status', 'Note'],
   Packages: ['PackageID', 'Student', 'Classes', 'Purchased', 'Expires', 'Amount', 'Note'],
   Plans: ['PlanID', 'Student', 'Plan', 'Start', 'End', 'Note'],
-  Payments: ['PaymentID', 'Student', 'Amount', 'Date', 'For', 'Status', 'Method', 'Note'],
+  Payments: ['PaymentID', 'Student', 'Amount', 'Date', 'For', 'Status', 'Method', 'Note', 'Covers'],
   Tags: ['Code', 'Name', 'Active', 'Notes', 'Scenario'],
 };
 
@@ -444,25 +444,34 @@ function ledgerFor_(book, cfg, studentId, today) {
     return item;
   });
 
-  let paid = 0, pending = 0;
+  // What's still unpaid, per drop-in. A payment made from the check-in page names the check-ins
+  // it was for (Payments → Covers), and pays those first; anything else (the owner's typed-in
+  // payments, or money left over) pays off the oldest unpaid drop-ins.
+  const left = {};
+  items.forEach(function (i) { if (i.covered === 'dropin') left[i.id] = i.price; });
+  let paid = 0, pending = 0, pool = 0;
   (book.payments || []).forEach(function (p) {
     if (resolveStudentId_(book, p.Student) !== studentId) return;
     const status = str_(p.Status).toLowerCase();
     if (status === 'rejected' || status === 'void' || str_(p.For).toLowerCase() === 'package') return;
-    const amt = num_(p.Amount, 0);
+    let amt = num_(p.Amount, 0);
     paid = round2_(paid + amt);
     if (status === 'declared') pending = round2_(pending + amt);
+    str_(p.Covers).split(/[\s,]+/).filter(Boolean).forEach(function (id) {
+      if (!(id in left) || amt <= 0) return;
+      const take = Math.min(left[id], amt);
+      left[id] = round2_(left[id] - take);
+      amt = round2_(amt - take);
+    });
+    pool = round2_(pool + amt);
   });
-
-  // Which drop-ins are still unpaid: payments aren't tied to classes, so they pay off the oldest
-  // first. What's left is what the page lists when a balance carries forward.
-  let credit = paid;
   const unpaid = [];
   items.forEach(function (i) {
-    if (i.covered !== 'dropin') return;
-    const covered = Math.min(credit, i.price);
-    credit = round2_(credit - covered);
-    if (i.price - covered > 0) unpaid.push({ id: i.id, day: i.day, className: i.className, start: i.start, amount: round2_(i.price - covered) });
+    if (!(i.id in left)) return;
+    const take = Math.min(left[i.id], pool);
+    left[i.id] = round2_(left[i.id] - take);
+    pool = round2_(pool - take);
+    if (left[i.id] > 0) unpaid.push({ id: i.id, day: i.day, className: i.className, start: i.start, amount: left[i.id] });
   });
 
   const valid = packages.filter(function (p) { return p.left > 0 && (!p.expires || p.expires >= today); });
@@ -501,26 +510,24 @@ function accountView_(book, cfg, student, today, checkinIds) {
   const count = function (k) { return mine.filter(function (i) { return i.covered === k; }).length; };
   const dropins = mine.filter(function (i) { return i.covered === 'dropin'; });
   const dropinTotal = round2_(dropins.reduce(function (n, i) { return n + i.price; }, 0));
-  // What the balance is made of, so a carried-forward amount is never a mystery: each unpaid
-  // drop-in with its date, and whether it's one of the check-ins just made.
-  const unpaid = led.owed > 0 ? led.unpaid.map(function (u) {
-    return { day: fmtDay_(u.day), className: u.className, time: u.start == null ? '' : fmtTime_(u.start), amount: u.amount, label: money_(u.amount), now: ids.indexOf(u.id) >= 0 };
-  }) : [];
+  // The page only ever asks for the classes just checked in to. Older unpaid classes are the
+  // owner's to follow up (Dashboard, Monday email): an old "debt" may simply be a cash payment
+  // not typed in yet, and a check-in is the wrong moment to surprise someone with it.
+  const unpaid = led.unpaid.filter(function (u) { return ids.indexOf(u.id) >= 0; });
+  const due = round2_(unpaid.reduce(function (n, u) { return n + u.amount; }, 0));
   let pay = null;
-  if (led.owed > 0 && cfg.venmoHandle) {
-    // The Venmo note names what's being paid for, grouped by day: "Salsa 1 + Bachata 2 Mon Nov 2; Salsa 1 Wed Nov 4".
+  if (due > 0 && cfg.venmoHandle) {
+    // The Venmo note names what's being paid for: "Salsa 1 + Bachata 2 Mon Nov 2".
     const byDay = [];
     unpaid.forEach(function (u) {
       const d = byDay.filter(function (x) { return x.day === u.day; })[0];
       if (d) d.names.push(u.className); else byDay.push({ day: u.day, names: [u.className] });
     });
-    const what = unpaid.length && unpaid.length <= 4
-      ? byDay.map(function (d) { return d.names.join(' + ') + ' ' + d.day; }).join('; ')
-      : unpaid.length + ' classes';
+    const what = byDay.map(function (d) { return d.names.join(' + ') + ' ' + fmtDay_(d.day); }).join('; ');
     pay = {
-      amount: led.owed,
-      label: money_(led.owed),
-      url: venmoPayUrl_(cfg.venmoHandle, led.owed, cfg.studioName + ': ' + what + ' (' + str_(student.Name) + ')'),
+      amount: due,
+      label: money_(due),
+      url: venmoPayUrl_(cfg.venmoHandle, due, cfg.studioName + ': ' + what + ' (' + str_(student.Name) + ')'),
     };
   }
   return {
@@ -529,11 +536,11 @@ function accountView_(book, cfg, student, today, checkinIds) {
     plan: led.plan,
     nextExpiry: led.nextExpiry ? fmtDay_(led.nextExpiry) : '',
     expiresSoon: !!led.nextExpiry && led.nextExpiry <= addDays_(today, 14),
-    owed: led.owed,
+    owed: led.owed,                    // the whole balance: for the owner's menu, not shown on the page
     owedLabel: money_(Math.abs(led.owed)),
+    due: due,                          // what the page asks for: the unpaid part of these check-ins
+    dueLabel: money_(due),
     pending: led.pending,
-    pendingLabel: money_(led.pending),
-    unpaid: unpaid,
     these: mine.length ? {
       plan: count('plan'), package: count('package'), free: count('free'), dropin: dropins.length,
       dropinTotal: dropinTotal, dropinLabel: money_(dropinTotal),
@@ -903,20 +910,25 @@ function declarePayment_(book, cfg, req, now, io) {
   if (!student) return { ok: false, error: "We couldn't find you — please check in first." };
   const amount = round2_(num_(req.amount, 0));
   if (!(amount > 0)) return { ok: false, error: 'That amount looks wrong.' };
-  // The page only ever offers to pay what's owed. Anything more would let someone who knows
-  // a student's email wipe out what that student owes, or build them a credit.
-  const owed = ledgerFor_(book, cfg, str_(student.StudentID), now.date).owed;
-  if (owed <= 0) return { ok: true, account: accountView_(book, cfg, student, now.date, [].concat(req.checkinIds || [])) };
+  // The page only ever offers to pay what the check-ins it names still owe (or, with none named,
+  // the whole balance). Anything more would let someone who knows a student's email wipe out
+  // what that student owes, or build them a credit.
+  const ids = [].concat(req.checkinIds || []).map(str_).filter(Boolean);
+  const view = function () { return { ok: true, account: accountView_(book, cfg, student, now.date, ids) }; };
+  const owed = ids.length ? accountView_(book, cfg, student, now.date, ids).due
+    : ledgerFor_(book, cfg, str_(student.StudentID), now.date).owed;
+  if (owed <= 0) return view(); // already paid: a second "Yes, I paid" records nothing
   if (amount > owed) return { ok: false, error: 'That amount looks wrong.' };
   // Recorded by name to match the owner's dropdown, unless the name is shared — then by email.
   const who = resolveStudentId_(book, student.Name) === str_(student.StudentID) ? str_(student.Name) : cleanEmail_(student.Email);
   const row = {
     PaymentID: io.newId('P'), Student: who, Amount: amount, Date: now.date,
     For: 'dropin', Status: 'declared', Method: 'venmo', Note: str_(req.note).slice(0, 200),
+    Covers: ids.join(' '), // pays for these check-ins first (see ledgerFor_)
   };
   book.payments.push(row);
   io.append('Payments', row);
-  return { ok: true, account: accountView_(book, cfg, student, now.date, [].concat(req.checkinIds || [])) };
+  return view();
 }
 
 // ------------------------------ owner reports ------------------------------
