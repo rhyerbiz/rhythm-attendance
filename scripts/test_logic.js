@@ -472,6 +472,16 @@ test('owed adds up across several unpaid drop-ins, each one listed', () => {
     ['Mon Nov 2', 'Salsa 1', '$20', false], ['Wed Nov 4', 'Salsa 1', '$20', true],
   ]);
   assert.ok(decodeURIComponent(res.account.pay.url).includes('Salsa 1 Mon Nov 2; Salsa 1 Wed Nov 4'));
+  // Each carries its class time, so two sessions of one class can be told apart.
+  assert.strictEqual(res.account.unpaid[0].time, '7:00pm');
+});
+
+test('a Wix class that has left the synced schedule still shows its time in the unpaid list', () => {
+  const book = makeBook({ schedule: [] });
+  book.students.push({ StudentID: 'S1', Name: 'Jess Lee', Email: 'jess@example.com' });
+  book.log.push({ CheckinID: 'C1', ClassDate: '2026-10-26', StudentID: 'S1', Student: 'Jess Lee', ClassID: 'Wc0549875-1915', Class: 'Dance 101', Price: 20, Status: 'ok' });
+  const a = fn('accountView_')(book, fn('configFrom_')(book.config), book.students[0], MON, []);
+  same(a.unpaid.map((u) => [u.className, u.day, u.time]), [['Dance 101', 'Mon Oct 26', '7:15pm']]);
 });
 
 test('payments pay off the oldest drop-ins first, so only what is still owed is listed', () => {

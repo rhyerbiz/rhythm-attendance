@@ -449,7 +449,10 @@
     if (unpaid.length) {
       var earlier = unpaid.some(function (u) { return !u.now; });
       var todayLabel = res.checkins && res.checkins[0] && res.checkins[0].dayLabel;
-      var when = function (u) { return u.now ? 'today' : u.day === todayLabel ? 'earlier today' : esc(u.day); };
+      var when = function (u) {
+        var d = u.now ? 'today' : u.day === todayLabel ? 'earlier today' : esc(u.day);
+        return d + (u.time && !u.now ? ', ' + esc(u.time) : '');
+      };
       var owedRows = (earlier || unpaid.length > 1)
         ? '<p style="margin:0 0 6px"><b>' + (earlier ? 'Still to pay, including earlier classes' : 'To pay') + '</b></p>' +
           '<ul class="owed">' + unpaid.map(function (u) {

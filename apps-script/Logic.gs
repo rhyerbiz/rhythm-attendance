@@ -380,7 +380,15 @@ function classView_(c, day) {
  */
 function ledgerFor_(book, cfg, studentId, today) {
   const prices = {};
-  classesFrom_(book, cfg).forEach(function (c) { prices[c.id] = c.price; });
+  const starts = {};
+  classesFrom_(book, cfg).forEach(function (c) { prices[c.id] = c.price; starts[c.id] = c.start; });
+  // A class's start time, for telling two sessions of one class apart. Wix ClassIDs end in HHMM,
+  // so the time is known even once the session has dropped off the synced schedule.
+  const startOf = function (id) {
+    if (id in starts) return starts[id];
+    const m = id.match(/-(\d{2})(\d{2})$/);
+    return m && id.charAt(0) === 'W' ? (+m[1]) * 60 + (+m[2]) : null;
+  };
 
   const packages = allPackages_(book).filter(function (p) {
     return resolveStudentId_(book, p.Student) === studentId && num_(p.Classes, 0) > 0;
@@ -411,7 +419,7 @@ function ledgerFor_(book, cfg, studentId, today) {
     const day = dayStr_(l.ClassDate);
     const price = str_(l.Price) !== '' ? num_(l.Price, cfg.dropInPrice) :
       (str_(l.ClassID) in prices ? prices[str_(l.ClassID)] : cfg.dropInPrice);
-    const item = { id: str_(l.CheckinID), day: day, className: str_(l.Class), covered: 'free', price: 0, packageId: '' };
+    const item = { id: str_(l.CheckinID), day: day, className: str_(l.Class), start: startOf(str_(l.ClassID)), covered: 'free', price: 0, packageId: '' };
     if (price <= 0) return item;
     const plan = planOn(day);
     if (plan) {
@@ -454,7 +462,7 @@ function ledgerFor_(book, cfg, studentId, today) {
     if (i.covered !== 'dropin') return;
     const covered = Math.min(credit, i.price);
     credit = round2_(credit - covered);
-    if (i.price - covered > 0) unpaid.push({ id: i.id, day: i.day, className: i.className, amount: round2_(i.price - covered) });
+    if (i.price - covered > 0) unpaid.push({ id: i.id, day: i.day, className: i.className, start: i.start, amount: round2_(i.price - covered) });
   });
 
   const valid = packages.filter(function (p) { return p.left > 0 && (!p.expires || p.expires >= today); });
@@ -496,7 +504,7 @@ function accountView_(book, cfg, student, today, checkinIds) {
   // What the balance is made of, so a carried-forward amount is never a mystery: each unpaid
   // drop-in with its date, and whether it's one of the check-ins just made.
   const unpaid = led.owed > 0 ? led.unpaid.map(function (u) {
-    return { day: fmtDay_(u.day), className: u.className, amount: u.amount, label: money_(u.amount), now: ids.indexOf(u.id) >= 0 };
+    return { day: fmtDay_(u.day), className: u.className, time: u.start == null ? '' : fmtTime_(u.start), amount: u.amount, label: money_(u.amount), now: ids.indexOf(u.id) >= 0 };
   }) : [];
   let pay = null;
   if (led.owed > 0 && cfg.venmoHandle) {
@@ -582,12 +590,12 @@ function testClasses_(scenario, now, cfg) {
   };
   switch (scenario) {
     case 'one': return [mk(1, 'Salsa', base + 10)];
-    case 'two': return [mk(1, 'Salsa', base + 10), mk(2, 'Bachata', base + 20)];
-    case 'series': return [mk(1, 'Salsa 1', base + 10), mk(2, 'Salsa 2', base + 70), mk(3, 'Styling Lab', base + 130)];
-    case 'early': return [mk(1, 'Salsa', base + 120)];
-    case 'late': return [mk(1, 'Salsa', base - 100)];
+    case 'two': return [mk(1, 'Bachata', base + 10), mk(2, 'Cumbia', base + 20)];
+    case 'series': return [mk(1, 'Tango 1', base + 10), mk(2, 'Tango 2', base + 70), mk(3, 'Styling Lab', base + 130)];
+    case 'early': return [mk(1, 'Hip Hop', base + 120)];
+    case 'late': return [mk(1, 'West Coast Swing', base - 100)];
     case 'free': return [mk(1, 'Open Practice', base + 5, 0)];
-    case 'none': return [mk(1, 'Salsa', 19 * 60, null, addDays_(now.date, 1))];
+    case 'none': return [mk(1, 'Zouk', 19 * 60, null, addDays_(now.date, 1))];
     default: return [];
   }
 }
