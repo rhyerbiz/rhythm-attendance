@@ -69,7 +69,8 @@ body {
 }
 .nologo .logo { display: none; }
 .envbadge {
-  margin-left: 8px; padding: 2px 7px; border-radius: 6px;
+  display: inline-block; margin-top: 8px; line-height: 1.4; /* below the logo, not over it */
+  padding: 2px 7px; border-radius: 6px;
   background: var(--warn-soft); color: var(--warn-ink); letter-spacing: 0.04em;
 }
 main { max-width: 440px; margin: 0 auto; }
