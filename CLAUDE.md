@@ -124,7 +124,7 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     New students are capped per hour (`NEW_STUDENTS_PER_HOUR`, `io.allowNewStudent`). The page
     has a CSP (`index.html`); a new external host needs adding there, and no inline handlers.
     Known and accepted: anyone who knows a student's email can check in as them and see their
-    balance (low stakes; the passkey would fix it).
+    balance (low stakes).
 11f. **Sign codes** (`codeSource_`, Tags tab, menu "Make a code for a new sign or tag…"): once
     Tags has an active code, a check-in needs one of them in `?t=`, checked before anything is
     written (`needTag` otherwise); the Log's Source is the tag's Name. No tags = anything goes
@@ -135,6 +135,15 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     declared payments (`resetTester_`, via `io.update`). All of it only works while Config
     `testScenarios` is yes; never set it in prod. Menu "Make test links for testers" fills a
     "Test links" tab. docs/TESTING.md is built around them.
+11h. **Passkeys (optional):** after a check-in the page offers "Save a passkey" when the student
+    has none (`hasPasskey`) and the phone supports it. The page makes a random 32-byte handle,
+    puts it in the passkey's user handle, and sends it (`action: 'passkey'`, needs the sign's
+    code) to Students → Passkey. "Check in with a passkey" on the email screen sends the handle
+    back (`req.passkey`) instead of an email. No signature check (Apps Script can't verify
+    P-256), so a passkey is worth what an email is worth; the handle is never returned in any
+    answer. WebAuthn calls run straight from a tap (Safari needs the user gesture), and every
+    failure falls back to the email box. rpId = the page's hostname, so dev and prod passkeys
+    are separate. Start over (test links) clears a tester's Passkey too.
 12. **The Sheet's `studioName` wins.** The page remembers the last name the API sent;
     `config.js` only covers a phone's first visit.
 13. **Backups:** `backupNow` (nightly trigger) copies the SCHEMA tabs — values only, no script —
@@ -174,5 +183,7 @@ and tag it in git. `push.js --deploy` redeploys the existing deployment, so the 
 - iPhone Safari may clear the remembered student after 7 days without interaction on the page
   (possibly even for weekly students, whose check-in needs no tap). The page asks for the email
   only (name just for a new email) and calls `navigator.storage.persist()`, so a forgotten
-  student taps their autofilled email. If it's still a nuisance, the planned fix is a passkey
-  ("Check in with Face ID"), which lives in the phone's keychain and survives Safari's purge.
+  student taps their autofilled email, or "Check in with a passkey" if they saved one (rule 11h).
+- Passkeys end to end on a real iPhone and an Android phone: the offer appears, Save shows Face
+  ID / fingerprint, and after clearing the site's data "Check in with a passkey" finds them. The
+  preview has no authenticator, so only the code around the prompts was tested there.

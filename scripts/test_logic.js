@@ -593,6 +593,42 @@ test('the chat card is full for the first three check-ins, then one line, and go
   assert.strictEqual(fn('handleRequest_')(book, { action: 'chat', email: 'nobody@example.com' }, at('2026-11-18', '19:00'), updIo()).ok, false);
 });
 
+// ------------------------------------------------------------------ passkeys
+const HANDLE = 'aB3_-xYz'.repeat(6); // 48 url-safe characters, like the page's base64url of 32 random bytes
+
+test('a saved passkey checks the student in without their email, and is never sent back', () => {
+  const book = makeBook();
+  const first = checkin(book, at(MON, '18:55'));
+  assert.strictEqual(first.hasPasskey, false);
+  const io = updIo();
+  const saved = fn('handleRequest_')(book, { action: 'passkey', email: 'jess@example.com', handle: HANDLE, code: { t: 'static' } }, at(MON, '18:56'), io);
+  assert.strictEqual(saved.ok, true);
+  assert.strictEqual(book.students[0].Passkey, HANDLE);
+  assert.strictEqual(io.updated[0][0], 'Students');
+  // Safari forgot her: no email, just the passkey's handle.
+  const res = checkin(book, at('2026-11-04', '18:55'), { email: '', name: '', passkey: HANDLE });
+  assert.strictEqual(res.status, 'ok');
+  assert.strictEqual(res.student.email, 'jess@example.com');
+  assert.strictEqual(res.hasPasskey, true);
+  assert.ok(!JSON.stringify(res).includes(HANDLE));
+});
+
+test('an unknown or malformed passkey falls back to asking for the email; saving needs a valid handle and the sign', () => {
+  const book = makeBook();
+  checkin(book, at(MON, '18:55'));
+  const unknown = checkin(book, at(MON, '18:56'), { email: '', passkey: 'Q'.repeat(43) });
+  assert.strictEqual(unknown.ok, false);
+  assert.strictEqual(unknown.status, 'needDetails');
+  assert.strictEqual(checkin(book, at(MON, '18:56'), { email: '', passkey: 'short' }).status, 'needDetails');
+  const h = fn('handleRequest_');
+  assert.strictEqual(h(book, { action: 'passkey', email: 'jess@example.com', handle: 'short', code: { t: 'static' } }, at(MON, '19:00'), updIo()).ok, false);
+  assert.strictEqual(h(book, { action: 'passkey', email: 'nobody@example.com', handle: HANDLE, code: { t: 'static' } }, at(MON, '19:00'), updIo()).ok, false);
+  const tagged = makeBook({ tags: [{ Code: 'realsigncode', Name: 'Front door', Active: 'yes' }] });
+  checkin(tagged, at(MON, '18:55'), { code: { t: 'realsigncode' } });
+  assert.strictEqual(h(tagged, { action: 'passkey', email: 'jess@example.com', handle: HANDLE, code: {} }, at(MON, '19:00'), updIo()).status, 'needTag');
+  assert.strictEqual(tagged.students[0].Passkey, undefined);
+});
+
 // ------------------------------------------------------------------ Wix sync
 const WIX_SESSIONS = [
   { title: 'Dance 101', serviceId: 'c0549875-d10f', start: '2026-11-09T19:00:00', end: '2026-11-09T20:00:00', status: 'CONFIRMED', type: 'CLASS' },

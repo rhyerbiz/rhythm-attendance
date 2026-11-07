@@ -17,7 +17,7 @@ const APP_VERSION = '1.0.0';
 const SCHEMA = {
   Config: ['Key', 'Value', 'Notes'],
   Schedule: ['ClassID', 'Class', 'Days', 'Start', 'Minutes', 'Price', 'Active', 'FirstDate', 'LastDate'],
-  Students: ['StudentID', 'Name', 'Email', 'Phone', 'Venmo', 'FirstSeen', 'Notes', 'Chat'],
+  Students: ['StudentID', 'Name', 'Email', 'Phone', 'Venmo', 'FirstSeen', 'Notes', 'Chat', 'Passkey'],
   Log: ['CheckinID', 'When', 'ClassDate', 'StudentID', 'Student', 'ClassID', 'Class', 'Price', 'Source', 'Status', 'Note'],
   Packages: ['PackageID', 'Student', 'Classes', 'Purchased', 'Expires', 'Amount', 'Note'],
   Plans: ['PlanID', 'Student', 'Plan', 'Start', 'End', 'Note'],
@@ -614,11 +614,13 @@ function resetTester_(book, student, now, io) {
     p.Status = 'void';
     io.update('Payments', p, { Status: 'void' });
   });
-  // …and the group chat card starts over for them too.
-  if (str_(student.Chat)) {
-    student.Chat = '';
-    io.update('Students', student, { Chat: '' });
-  }
+  // …and the group chat card and the passkey offer start over for them too.
+  ['Chat', 'Passkey'].forEach(function (h) {
+    if (!str_(student[h])) return;
+    student[h] = '';
+    const f = {}; f[h] = '';
+    io.update('Students', student, f);
+  });
   return cleared;
 }
 
@@ -688,7 +690,37 @@ function handleRequest_(book, req, now, io) {
   if (action === 'checkin') return checkin_(book, cfg, req, now, io, {});
   if (action === 'declarePayment') return declarePayment_(book, cfg, req, now, io);
   if (action === 'chat') return chatChoice_(book, req, now, io);
+  if (action === 'passkey') return passkeySaved_(book, req, io);
   return { ok: false, error: 'Unknown request.' };
+}
+
+// --------------------------------- passkeys ---------------------------------
+//
+// Optional, so a phone that forgets a student (Safari clears a page's storage after 7 days
+// without interaction) can check in with Face ID / fingerprint instead of typing their email.
+// The passkey lives in the phone's keychain, which that clean-up doesn't touch. The page makes
+// a random handle, saves it inside the passkey (its "user handle"), and sends it here, to
+// Students → Passkey. Checking in with the passkey sends the handle back, which finds the
+// student. There's no signature check (Apps Script can't verify one), so a passkey is worth
+// exactly what knowing the student's email is worth, never more; the handle is a 256-bit
+// random secret that only the passkey and the Sheet hold, and no answer ever includes it.
+
+function validPasskeyHandle_(h) { return /^[A-Za-z0-9_-]{40,100}$/.test(str_(h)); }
+
+function findStudentByPasskey_(book, handle) {
+  const h = str_(handle);
+  if (!validPasskeyHandle_(h)) return null;
+  return (book.students || []).filter(function (s) { return str_(s.Passkey) === h; })[0] || null;
+}
+
+/** The page saved a passkey for this student: keep its handle (replacing any older one). */
+function passkeySaved_(book, req, io) {
+  if (!codeSource_(book, req.code).ok) return { ok: false, status: 'needTag', error: 'To check in, tap or scan the sign at the studio.' };
+  const student = findStudentByEmail_(book, cleanEmail_(req.email));
+  if (!student || !validPasskeyHandle_(req.handle)) return { ok: false, error: 'That passkey could not be saved.' };
+  student.Passkey = str_(req.handle);
+  io.update('Students', student, { Passkey: student.Passkey });
+  return { ok: true };
 }
 
 /**
@@ -707,11 +739,17 @@ function allClassesToday_(book, day) {
 }
 
 function checkin_(book, cfg, req, now, io, opts) {
-  const email = cleanEmail_(req.email);
+  let email = cleanEmail_(req.email);
   const name = str_(req.name).replace(/\s+/g, ' ').slice(0, 80);
   // The sign's code first, before anything is written: no code, no new student, no check-in.
   const from = opts.source ? { ok: true, source: opts.source } : codeSource_(book, req.code);
   if (!from.ok) return { ok: false, status: 'needTag', error: 'To check in, tap or scan the sign at the studio.' };
+  // Checking in with a passkey instead of an email (see passkeySaved_).
+  if (req.passkey) {
+    const byKey = findStudentByPasskey_(book, req.passkey);
+    if (!byKey) return { ok: false, status: 'needDetails', error: 'That passkey isn\'t recognized any more. Please enter your email.' };
+    email = cleanEmail_(byKey.Email);
+  }
   if (!validEmail_(email)) return { ok: false, status: 'needDetails', error: 'Please enter a valid email.' };
 
   // A tester's "Start over" link: only ever touches the student with this email.
@@ -739,7 +777,8 @@ function checkin_(book, cfg, req, now, io, opts) {
   // and only while they haven't joined or hidden it (Students → Chat).
   const chatMode = chatMode_(book, cfg, student);
   const base = { ok: true, studio: cfg.studioName, student: studentView_(student), isNew: isNew,
-    chatLink: chatMode ? cfg.chatLink : '', chatMode: chatMode };
+    chatLink: chatMode ? cfg.chatLink : '', chatMode: chatMode,
+    hasPasskey: !!str_(student.Passkey) }; // so the page only offers to save one when there isn't one
   // A test link (dev only) swaps the real schedule for its scenario's pretend classes.
   const classes = from.scenario ? testClasses_(from.scenario, now, cfg) : classesFrom_(book, cfg);
   const avail = opts.anyTimeToday

@@ -171,6 +171,79 @@
     api({ action: 'ping' }).catch(function () { /* only a head start */ });
   }
 
+  // ------------------------------------------------------------ passkeys
+  // Optional: if Safari ever forgets this student (it clears page storage after 7 days without
+  // interaction), a passkey in the phone's keychain lets them check in with Face ID or a
+  // fingerprint instead of typing their email. The passkey only carries a random handle that
+  // the Sheet links to them (Logic.gs: passkeySaved_). Anything that fails falls back to email.
+  var PASSKEY_KEY = 'rhythm.passkey'; // 'declined' once they tap Not now on this phone
+  function passkeysUsable() {
+    return !!(window.PublicKeyCredential && navigator.credentials && window.isSecureContext);
+  }
+  function randomBytes(n) { var b = new Uint8Array(n); crypto.getRandomValues(b); return b; }
+  function b64url(buf) {
+    var s = '', b = new Uint8Array(buf);
+    for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  // Called straight from a tap: Safari only allows Face ID prompts from one, so nothing is awaited first.
+  function passkeyCheckIn() {
+    navigator.credentials.get({ publicKey: {
+      challenge: randomBytes(32), rpId: location.hostname, userVerification: 'preferred', timeout: 60000,
+    } }).then(function (cred) {
+      var h = cred && cred.response && cred.response.userHandle;
+      if (!h || !h.byteLength) throw new Error('no handle');
+      checkin({ name: '', email: '', passkey: b64url(h) });
+    }).catch(function (e) {
+      if (e && e.name === 'NotAllowedError') return; // cancelled, or no passkey here: the email box is still there
+      viewRegister({}, 'That passkey didn\'t work. Please enter your email instead.');
+    });
+  }
+  // After a check-in: offer to save one, if this student has none and this phone can.
+  function offerPasskey(me, res) {
+    var declined = false;
+    try { declined = localStorage.getItem(PASSKEY_KEY) === 'declined'; } catch (e) { /* ask */ }
+    if (!passkeysUsable() || res.hasPasskey || declined || !me.email) return;
+    var check = PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable;
+    (check ? check.call(PublicKeyCredential) : Promise.resolve(false)).then(function (ok) {
+      var foot = app.querySelector(':scope > .foot:last-child'); // the page's "Not you?" line, not a card's
+      if (!ok || !foot || app.querySelector('#pkcard')) return;
+      var card = document.createElement('div');
+      card.className = 'card center';
+      card.id = 'pkcard';
+      card.innerHTML =
+        '<p style="margin:0 0 2px"><b>Skip typing your email next time</b></p>' +
+        '<p class="small muted">If this phone ever forgets you, check in with Face ID or your fingerprint instead.</p>' +
+        '<button class="btn secondary" id="pksave" type="button">Save a passkey</button>' +
+        '<p class="foot" style="margin:10px 0 0"><button class="linkish" id="pkno" type="button">Not now</button></p>';
+      app.insertBefore(card, foot);
+      card.querySelector('#pkno').addEventListener('click', function () {
+        try { localStorage.setItem(PASSKEY_KEY, 'declined'); } catch (e) { /* asked again next time */ }
+        card.remove();
+      });
+      card.querySelector('#pksave').addEventListener('click', function () {
+        var id = randomBytes(32), handle = b64url(id);
+        navigator.credentials.create({ publicKey: {
+          rp: { name: studioName || 'Studio check-in', id: location.hostname },
+          user: { id: id, name: me.email, displayName: (res.student && res.student.name) || me.email },
+          challenge: randomBytes(32),
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+          authenticatorSelection: { residentKey: 'required', requireResidentKey: true, userVerification: 'preferred' },
+          attestation: 'none', timeout: 60000,
+        } }).then(function () {
+          return api({ action: 'passkey', email: me.email, handle: handle, code: CODE });
+        }).then(function (r) {
+          if (!r.ok) throw new Error(r.error || 'not saved');
+          card.innerHTML = '<p style="margin:0"><b>Passkey saved ✓</b></p>' +
+            '<p class="small muted" style="margin:4px 0 0">If this phone ever asks for your email, tap <b>Check in with a passkey</b> instead.</p>';
+        }).catch(function (e) {
+          if (e && e.name === 'NotAllowedError') return; // they cancelled: leave the offer up
+          card.innerHTML = '<p class="small muted" style="margin:0">Couldn\'t save a passkey on this phone. That\'s fine: your email still works.</p>';
+        });
+      });
+    }).catch(function () { /* no offer */ });
+  }
+
   function viewRegister(prefill, error, askName) {
     warmUp();
     render(
@@ -185,8 +258,13 @@
         (error ? '<div class="error" role="alert">' + esc(error) + '</div>' : '') +
         '<button class="btn" type="submit">Check in</button>' +
         '<p class="small muted" style="margin-top:12px">Use the same email you book or pay with, so your classes and packages line up.</p>' +
-      '</form>'
+      '</form>' +
+      (!askName && passkeysUsable()
+        ? '<div class="card center" id="pkin"><p class="small muted" style="margin:0 0 4px">Saved a passkey before?</p>' +
+          '<button class="btn secondary" id="pkgo" type="button">Check in with a passkey</button></div>'
+        : '')
     );
+    on('#pkgo', 'click', passkeyCheckIn);
     on('#reg', 'submit', function (e) {
       e.preventDefault();
       var nameEl = app.querySelector('#name');
@@ -387,6 +465,7 @@
     if (more.length) bindPicker(me, 'Check in', list.map(function (c) { return c.id; }));
     bindChat(res);
     bindNotYou();
+    offerPasskey(me, res);
     on('#venmo', 'click', function () {
       // Venmo opens in its app; when they come back, ask whether it went through.
       setTimeout(function () { viewPayConfirm(me, res); }, 600);
@@ -430,6 +509,7 @@
     viewBusy(me);
     var retry = function () { checkin(me, classIds, extra); };
     var req = { action: 'checkin', name: me.name || '', email: me.email, classIds: classIds || [], code: CODE };
+    if (me.passkey) req.passkey = me.passkey; // checking in with a passkey instead of an email
     if (extra) { req.unscheduled = !!extra.unscheduled; req.note = extra.note || ''; }
     apiRetry(req, 3)
       .then(function (res) {
