@@ -16,7 +16,8 @@ Nothing a tester does reaches the studio's accounts.
    - `pageUrl`: your page's address (`https://<you>.github.io/rhythm-attendance/`).
    - `testScenarios`: **yes**. This is what makes test links work. Never set it in the studio's copy.
 3. Choose **Check-in → Make test links for testers (dev copy)**. It fills a **Test links** tab
-   with one link per scenario plus **Start over**. Copy the lines into your message below.
+   with one link per scenario plus **Start over**. The first, "A regular on a monthly plan",
+   shows what most students see: covered by their plan, nothing to pay. Copy the lines into your message below.
    Running it again gives the same links.
 
 **How test links work:** each one pretends that scenario's classes are on, placed around the
@@ -51,6 +52,10 @@ your email and name; after that your phone remembers you.
 **Start over any time:** the **Start over** link clears only your own test check-ins and makes
 your phone forget you, so you can run through everything again (the next link asks for your
 email).
+
+Tap each one in order. The first shows the usual case, a regular on a monthly plan. **The rest
+treat you as a drop-in student** (no monthly plan or class pass), so you'll see what you'd owe
+each time.
 
 *(Paste the links from the Test links tab here: what happens, what to try, and the link. Put the
 Start over link right under the paragraph above.)*
