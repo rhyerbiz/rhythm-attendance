@@ -291,6 +291,12 @@ function allPlans_(book) {
   }));
 }
 
+/** The ClassID of a Log row, by CheckinID. */
+function classIdOf_(book, checkinId) {
+  const l = (book.log || []).filter(function (x) { return str_(x.CheckinID) === checkinId; })[0];
+  return l ? str_(l.ClassID) : '';
+}
+
 function classIsOn_(c, day) {
   return c.active && c.days.indexOf(dowOf_(day)) >= 0 &&
     (!c.first || day >= c.first) && (!c.last || day <= c.last);
@@ -421,7 +427,8 @@ function ledgerFor_(book, cfg, studentId, today) {
       (str_(l.ClassID) in prices ? prices[str_(l.ClassID)] : cfg.dropInPrice);
     const item = { id: str_(l.CheckinID), day: day, className: str_(l.Class), start: startOf(str_(l.ClassID)), covered: 'free', price: 0, packageId: '' };
     if (price <= 0) return item;
-    const plan = planOn(day);
+    // The "regular on a monthly plan" test link (dev only) is covered as if by a plan.
+    const plan = str_(l.ClassID).indexOf('T-regular-') === 0 ? { label: TEST_PLAN_LABEL } : planOn(day);
     if (plan) {
       item.covered = 'plan';
       return item;
@@ -533,7 +540,8 @@ function accountView_(book, cfg, student, today, checkinIds) {
   return {
     creditsLeft: led.creditsLeft,
     hasPackage: led.hasPackage,
-    plan: led.plan,
+    // (The "regular" test link has no Plans row, so it names its pretend plan here.)
+    plan: led.plan || (mine.some(function (i) { return /^T-regular-/.test(classIdOf_(book, i.id)); }) ? TEST_PLAN_LABEL : ''),
     nextExpiry: led.nextExpiry ? fmtDay_(led.nextExpiry) : '',
     expiresSoon: !!led.nextExpiry && led.nextExpiry <= addDays_(today, 14),
     owed: led.owed,                    // the whole balance: for the owner's menu, not shown on the page
@@ -573,7 +581,9 @@ function tagsFrom_(book) {
  * (as the preview does); everything else is the real page and the real Sheet.
  * Their check-ins have ClassIDs starting "T-" and class names ending "(test)".
  */
+const TEST_PLAN_LABEL = 'Adult Monthly (test)';
 const TEST_SCENARIOS = [
+  { id: 'regular', label: 'A regular on a monthly plan (the usual)', try: 'Check in. It should say your monthly plan covers it: nothing to pay.' },
   { id: 'one', label: 'A class is about to start', try: 'Check in. You should be checked straight in, with what you owe for a drop-in.' },
   { id: 'two', label: 'Two classes at the same time', try: 'Pick one or both classes.' },
   { id: 'series', label: 'Staying for three classes in a row', try: 'Check in to the first, then add the others from "Taking another class today?"' },
@@ -596,6 +606,7 @@ function testClasses_(scenario, now, cfg) {
     };
   };
   switch (scenario) {
+    case 'regular': return [mk(1, 'Adult Hip Hop', base + 10)];
     case 'one': return [mk(1, 'Salsa', base + 10)];
     case 'two': return [mk(1, 'Bachata', base + 10), mk(2, 'Cumbia', base + 20)];
     case 'series': return [mk(1, 'Tango 1', base + 10), mk(2, 'Tango 2', base + 70), mk(3, 'Styling Lab', base + 130)];

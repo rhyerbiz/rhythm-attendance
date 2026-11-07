@@ -822,6 +822,20 @@ test('a test link pretends its classes are on, at any hour, with real check-ins 
   assert.strictEqual(none.next.day, '2026-11-04');
 });
 
+test('the "regular" test link shows the usual case: covered by a monthly plan, nothing to pay', () => {
+  const book = makeBook({ tags: TEST_TAGS.concat([{ Code: 'testregularx', Name: 'Test: regular', Active: 'yes', Scenario: 'regular' }]),
+    config: [{ Key: 'dropInPrice', Value: '20' }, { Key: 'testScenarios', Value: 'yes' }, { Key: 'venmoHandle', Value: 'studio' }] });
+  const res = checkin(book, at('2026-11-03', '10:02'), { code: { t: 'testregularx' } });
+  assert.strictEqual(res.status, 'ok');
+  assert.strictEqual(res.checkins[0].name, 'Adult Hip Hop (test)');
+  assert.strictEqual(res.account.these.plan, 1);
+  assert.strictEqual(res.account.plan, 'Adult Monthly (test)');
+  assert.strictEqual(res.account.due, 0);
+  assert.strictEqual(res.account.pay, null);
+  // The other test links are still drop-ins for the same person.
+  assert.strictEqual(checkin(book, at('2026-11-03', '10:03'), { code: { t: 'testonecodex' } }).account.due, 20);
+});
+
 test('test links do nothing unless testScenarios is yes; the real sign still works', () => {
   const book = testBook(false);
   assert.strictEqual(checkin(book, at(MON, '18:55'), { code: { t: 'testonecodex' } }).status, 'needTag');
