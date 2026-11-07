@@ -45,8 +45,10 @@ Updates afterwards: see [Updating](#updating-dev-first-then-prod).
    ```
    (Without clasp: create `Logic.gs`, `Code.gs` and `Wix.gs` in the editor and paste the files
    from `apps-script/`. Turn on **Project Settings → Show "appsscript.json"** and paste that too.)
-3. In **Project Settings**, set the time zone to match the Sheet's (the manifest ships with
-   `America/Chicago` as a placeholder).
+3. The script's time zone comes from `apps-script/appsscript.json` (`America/Denver`, the
+   studio's) and is reset to it on every push, so don't change it in **Project Settings**. Set
+   the **Sheet's** time zone to the same (**File → Settings**); check-in times follow the Sheet.
+   If the studio ever moves zones, change the `timeZone` line in that file instead.
 4. Select `setup` in the function dropdown and **Run**. Approve the permissions (it's your own
    script asking to use your own Sheet and send email). This builds the tabs.
 5. Back in the Sheet, fill in:
@@ -85,17 +87,24 @@ Updates afterwards: see [Updating](#updating-dev-first-then-prod).
 
 ## 4. The tag and the QR code
 
-Your dev sticker gets `https://<you>.github.io/rhythm-attendance/?t=static`. Pages opened
-there show a **DEV** badge next to the studio name. Make this one now and use it to test.
+Each sign, sticker or totem gets its own random code, so someone who only finds the website
+can't check in, and the **Log**'s `Source` says which sign each check-in came from.
 
-The studio's sign gets its own address at handover, and that one is permanent:
+1. Put the page's address in `pageUrl` in **Config** (dev: `https://<you>.github.io/rhythm-attendance/`).
+2. Choose **Check-in → Make a code for a new sign or tag…** and give it a name (e.g. *Front
+   door*). It adds a row to the **Tags** tab and shows the address to write, like
+   `https://<you>.github.io/rhythm-attendance/?t=kqmzabhrdpsn`.
+3. Write that address to the NFC tag and make the QR code from it (below). Pages opened from the
+   dev address show a **DEV** badge.
 
-```
-https://checkin.theirstudio.com/?t=static
-```
+Until **Tags** has an active code, any address can check in (handy for the first tests). Once
+it has one, only addresses with an active code can: anything else shows "tap the sign at the
+studio", before anything is recorded. The owner's **Check someone in…** needs no code.
 
-Decide it before printing the sign — it is baked in. (When the rotating-code totem arrives it
-serves the same page with a changing `t` and `s`, so nothing else changes.)
+The codes live only in the Sheet, never in the repo. If one leaks (a photo of the QR code passed
+around), set its `Active` to `no`, make a new one, and rewrite that tag and QR code. The studio's
+copy makes its own codes at handover, with its own `pageUrl` (e.g. `https://checkin.theirstudio.com/`).
+(When the rotating-code totem arrives it serves the same page with a changing `t` and `s`.)
 
 - **NFC:** an NTAG213 or NTAG215 sticker. Write a single *URL* record with the free **NFC Tools**
   app, then use *Other → Set password* so nobody else can rewrite it. **Don't use "Lock tag"** —

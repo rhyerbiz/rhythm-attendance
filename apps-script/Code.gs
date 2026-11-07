@@ -8,7 +8,7 @@
  * so students never see Google's "created by an Apps Script user" banner.
  */
 
-const TAB_KEYS = { Config: 'config', Schedule: 'schedule', Students: 'students', Log: 'log', Packages: 'packages', Plans: 'plans', Payments: 'payments' };
+const TAB_KEYS = { Config: 'config', Schedule: 'schedule', Students: 'students', Log: 'log', Packages: 'packages', Plans: 'plans', Payments: 'payments', Tags: 'tags' };
 // Written by the Wix sync (Wix.gs), never by hand; absent until it first runs. Defined here,
 // not in Wix.gs, because top-level code can't rely on another file having loaded first.
 const WIX_SCHEDULE_TAB = 'Wix schedule';
@@ -201,6 +201,7 @@ function onOpen() {
     .addItem('Back up now', 'backupNow')
     .addSeparator()
     .addItem('Turn on the Monday email and nightly backups', 'installTriggers')
+    .addItem('Make a code for a new sign or tag…', 'makeTagCode')
     .addItem('First-time setup', 'setup')
     .addItem('Test the Wix connection (read-only)', 'wixTest')
     .addItem('Get classes and purchases from Wix now (and every hour)', 'wixSyncNow')
@@ -257,6 +258,11 @@ function setup() {
   const statusCol = log.getRange(1, 1, 1, log.getLastColumn()).getValues()[0].indexOf('Status') + 1;
   if (statusCol) log.getRange(2, statusCol, Math.max(log.getMaxRows() - 1, 1), 1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(['ok', 'void', UNSCHEDULED], true).setAllowInvalid(true).build());
+
+  // Tag codes are text, never numbers or dates.
+  const tags = ss.getSheetByName('Tags');
+  const codeCol = tags.getRange(1, 1, 1, tags.getLastColumn()).getValues()[0].indexOf('Code') + 1;
+  if (codeCol) tags.getRange(2, codeCol, Math.max(tags.getMaxRows() - 1, 1), 1).setNumberFormat('@');
 
   if (!ss.getSheetByName('Dashboard')) ss.insertSheet('Dashboard', 0);
   if (!ss.getSheetByName(TODAY_TAB)) ss.insertSheet(TODAY_TAB, 0); // first, so it's what the Sheets app opens to
@@ -381,6 +387,38 @@ function checkInSomeone() {
   const done = res.checkins.map(function (c) { return c.name + (c.already ? ' (already checked in)' : ''); }).join(', ');
   ui.alert('Checked in', ((findStudentByEmail_(book, email) || {}).Name || res.student.name) + ': ' + done + '.' + (how ? '\n' + how.charAt(0).toUpperCase() + how.slice(1) + '.' : '') +
     (res.account && res.account.owed > 0 ? '\nThey owe ' + res.account.owedLabel + ' in total.' : ''), ui.ButtonSet.OK);
+}
+
+/**
+ * Owner menu: a new random code for a sign, sticker or totem, added to the Tags
+ * tab, and the address to write to its NFC tag and QR code. Once Tags has an
+ * active code, only addresses with one of them can check in. A code that leaks
+ * (a photo of the QR code passed around) is retired by setting Active to no.
+ */
+function makeTagCode() {
+  const ui = SpreadsheetApp.getUi();
+  const r = ui.prompt('New sign or tag', 'A name for it, so the Log shows where each check-in came from (e.g. Front door, Totem 2):', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  const name = r.getResponseText().trim().slice(0, 40) || 'Sign';
+  // Letters only, so Sheets never mistakes a code for a number (like 12e45). 12 letters ≈ 48 random bits.
+  const code = Utilities.getUuid().replace(/-/g, '').slice(0, 12).replace(/[0-9a-f]/g, function (h) {
+    return 'abcdefghjkmnpqrs'.charAt(parseInt(h, 16));
+  });
+  const ss = ss_();
+  const sh = ss.getSheetByName('Tags');
+  if (!sh) { ui.alert('Run Check-in → First-time setup first; it adds the Tags tab.'); return; }
+  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
+  const row = { Code: code, Name: name, Active: 'yes', Notes: 'Made ' + nowParts_().date };
+  sh.appendRow(headers.map(function (h) { return textSafe_(row[h] == null ? '' : row[h]); }));
+  const book = readBook_();
+  const page = configFrom_(book.config).pageUrl;
+  const url = page ? page.replace(/[?#].*$/, '').replace(/\/?$/, '/') + '?t=' + code : '';
+  const first = tagsFrom_(book).length === 1;
+  ui.alert('Code for ' + name, (url ? 'Write this address to its NFC tag and QR code:\n\n' + url
+    : 'Its address is your check-in page\'s address followed by ?t=' + code +
+      '\n(Put the page address in pageUrl in Config and this shows it in full.)') +
+    (first ? '\n\nThis is the first code, so from now on only signs with a code in the Tags tab can check people in. ' +
+      'Rewrite any older sticker or QR code with its new address.' : ''), ui.ButtonSet.OK);
 }
 
 function sendWeeklySummary() {

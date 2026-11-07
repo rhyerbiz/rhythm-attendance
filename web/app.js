@@ -197,6 +197,17 @@
     bindNotYou();
   }
 
+  // Opened without a sign's code (a bookmark, a shared link, a retired QR code).
+  function viewNeedTag() {
+    render(
+      '<div class="card center">' +
+        '<h1>Check in at the studio</h1>' +
+        '<p>Tap your phone on the check-in sign by the door, or scan its QR code with your camera.</p>' +
+        '<p class="small muted" style="margin-top:14px">This page only checks you in from the sign, so nobody can check in from home.</p>' +
+      '</div>'
+    );
+  }
+
   function viewChoose(me, res) {
     render(
       '<div class="card">' +
@@ -362,6 +373,7 @@
       .then(function (res) {
         setStudio(res.studio);
         if (res.student) saveMe(me = { name: res.student.name, email: res.student.email });
+        if (!res.ok && res.status === 'needTag') return viewNeedTag();
         if (!res.ok && res.status === 'needDetails') return viewRegister(me, res.needName ? '' : res.error, !!res.needName);
         if (!res.ok) return viewError(res.error || 'Something went wrong.', retry);
         if (res.status === 'choose') return viewChoose(me, res);

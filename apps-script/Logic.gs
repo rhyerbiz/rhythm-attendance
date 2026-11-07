@@ -22,6 +22,7 @@ const SCHEMA = {
   Packages: ['PackageID', 'Student', 'Classes', 'Purchased', 'Expires', 'Amount', 'Note'],
   Plans: ['PlanID', 'Student', 'Plan', 'Start', 'End', 'Note'],
   Payments: ['PaymentID', 'Student', 'Amount', 'Date', 'For', 'Status', 'Method', 'Note'],
+  Tags: ['Code', 'Name', 'Active', 'Notes'],
 };
 
 const DEFAULT_CONFIG = {
@@ -35,6 +36,7 @@ const DEFAULT_CONFIG = {
   wixSkip: 'Kids',
   wixPacks: 'Single Class = 1',
   chatLink: '',
+  pageUrl: '',
 };
 
 const CONFIG_NOTES = {
@@ -46,6 +48,7 @@ const CONFIG_NOTES = {
   ownerEmail: 'Where the weekly summary goes. Blank = the account that owns this sheet.',
   lapsedAfterDays: 'A regular who has not been in for this many days shows as lapsed.',
   chatLink: "Invite link to the studio's group chat (e.g. a Telegram invite link). Students see a Join button after checking in. Blank = no button.",
+  pageUrl: 'The check-in page\'s address (e.g. https://checkin.yourstudio.com/). Used to show the full address for a new sign\'s NFC tag and QR code.',
   wixPacks: 'Wix pricing plans that are class passes, with how many classes each, e.g. "Single Class = 1, 10 Class Pass = 10". A purchase becomes credits, like a Packages row. Any other Wix plan counts like a Plans row (covers every class while it runs).',
   wixSkip: 'Wix classes to leave out of check-in: words in the class name, separated by commas (e.g. Kids, Private). "none" = take them all.',
 };
@@ -505,16 +508,30 @@ function accountView_(book, cfg, student, today, checkinIds) {
 
 // -------------------------------- requests ---------------------------------
 
+/** Active rows of the Tags tab: one per sign, sticker or totem, each with its own code. */
+function tagsFrom_(book) {
+  return (book.tags || []).filter(function (t) { return str_(t.Code) && !isNo_(t.Active); }).map(function (t) {
+    return { code: str_(t.Code), name: str_(t.Name) || str_(t.Code) };
+  });
+}
+
 /**
- * The check-in code's source. A static sticker/QR sends t=static; the
- * rotating totem will send a time step and signature, verified here then.
- * Until that exists, anything else is recorded but marked unverified.
+ * Where a check-in came from, and whether it may go ahead. The URL on each NFC
+ * tag and QR code carries ?t=<code>, a random code from the Tags tab (kept in
+ * the Sheet, never in the repo). Once Tags has an active code, a check-in
+ * needs one, so someone who only found the website can't check in; the Log's
+ * Source says which sign was used. With no tags yet, anything goes and is
+ * recorded as before (static / direct / unverified). The rotating totem will
+ * send a time step and signature, to be verified here.
  */
-function codeSource_(code) {
+function codeSource_(book, code) {
   const t = str_(code && code.t);
-  if (!t) return 'direct';
-  if (t === 'static') return 'static';
-  return 'unverified';
+  const tags = tagsFrom_(book);
+  if (tags.length) {
+    const tag = tags.filter(function (x) { return x.code === t; })[0];
+    return tag ? { ok: true, source: tag.name } : { ok: false };
+  }
+  return { ok: true, source: !t ? 'direct' : t === 'static' ? 'static' : 'unverified' };
 }
 
 // Anyone can type any email into the page, so the answer carries only the first name
@@ -555,6 +572,9 @@ function allClassesToday_(book, day) {
 function checkin_(book, cfg, req, now, io, opts) {
   const email = cleanEmail_(req.email);
   const name = str_(req.name).replace(/\s+/g, ' ').slice(0, 80);
+  // The sign's code first, before anything is written: no code, no new student, no check-in.
+  const from = opts.source ? { ok: true, source: opts.source } : codeSource_(book, req.code);
+  if (!from.ok) return { ok: false, status: 'needTag', error: 'To check in, tap or scan the sign at the studio.' };
   if (!validEmail_(email)) return { ok: false, status: 'needDetails', error: 'Please enter a valid email.' };
 
   // A returning student only needs their email; the name is asked for the first time only.
@@ -579,7 +599,7 @@ function checkin_(book, cfg, req, now, io, opts) {
   const avail = opts.anyTimeToday
     ? allClassesToday_(book, now.date).map(function (c) { return { klass: c, open: true }; })
     : todaysClasses_(classes, now, cfg);
-  const source = opts.source || codeSource_(req.code);
+  const source = from.source;
   const sid = str_(student.StudentID);
 
   // "I'm here for a class anyway": recorded for the owner to sort out, charged nothing. One per

@@ -16,13 +16,15 @@ not the owner.
 
 ## Releases
 
-- **1.0 (this):** adult classes. A static NFC sticker + QR (`?t=static`) on a printed sign.
+- **1.0 (this):** adult classes. A static NFC sticker + QR on a printed sign, carrying `?t=<code>`
+  from the Sheet's Tags tab (one random code per sign; see rule 11f).
   Do not call this "v0" — the user wants it to be version 1.
 - **Later — rotating-code totem:** ESP32-S3 display board (Waveshare ESP32-S3-Touch-LCD-3.5) +
   Adafruit ST25DV16K dynamic NFC tag, showing `?t=<time step>&s=<HMAC>`. The server tracks the
   totem's clock drift (rolling median offset, re-anchor when several different students agree).
   `codeSource_()` in Logic.gs is where verification will go; until then those codes are
-  recorded as `unverified`. For adults this is low priority: checking in *costs* a class credit,
+  recorded as `unverified` (or refused once the Tags tab has codes). For adults this is low
+  priority: checking in *costs* a class credit,
   so nobody fakes attendance.
 - **Later — kids' classes:** fobs on the totem; an instructor's phone carries the kids' taps.
 - **Later — Wix:** read the schedule and package purchases from the studio's Wix site (likely the
@@ -119,6 +121,10 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     has a CSP (`index.html`); a new external host needs adding there, and no inline handlers.
     Known and accepted: anyone who knows a student's email can check in as them and see their
     balance (low stakes; the passkey would fix it).
+11f. **Sign codes** (`codeSource_`, Tags tab, menu "Make a code for a new sign or tag…"): once
+    Tags has an active code, a check-in needs one of them in `?t=`, checked before anything is
+    written (`needTag` otherwise); the Log's Source is the tag's Name. No tags = anything goes
+    (`static`/`direct`/`unverified`, as before). Codes live only in the Sheet, never the repo.
 12. **The Sheet's `studioName` wins.** The page remembers the last name the API sent;
     `config.js` only covers a phone's first visit.
 13. **Backups:** `backupNow` (nightly trigger) copies the SCHEMA tabs — values only, no script —

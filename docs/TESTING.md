@@ -15,7 +15,8 @@ Nothing the tester does reaches the studio's accounts.
    - `chatLink`: blank, or a throwaway Telegram group, so the Join button can be tried.
 3. **Get classes and purchases from Wix now (and every hour)** has been run, so the real class
    times are there. The tester tries it at the studio around a real class.
-4. Fill in the two blanks in "For the tester" below: the page address and where the test sticker is.
+4. The test sticker and QR code carry a code from **Make a code for a new sign or tag…** (SETUP
+   step 4). Fill in where they are in "For the tester" below.
 5. Afterwards, look at **Today**, **Log**, **Students** and **Payments** in the dev Sheet; each
    step below says what should appear. Void the test rows (Log `Status` = `void`) when you're done,
    or leave them: dev data never reaches the studio.
@@ -32,7 +33,8 @@ spreadsheet that fills itself in.
 studio's records. Please **don't send any real Venmo payment**. Where it says to tap a Venmo
 button, check that Venmo opens with the right amount, then back out without paying.
 
-- **The page:** `https://_____________________/?t=static`
+- **The page:** use the test sticker or QR code below. Opening the page any other way (a
+  bookmark, typing the address) shows "Check in at the studio" on purpose.
 - **The test sticker / QR code:** _____________________
 
 ### Things to try

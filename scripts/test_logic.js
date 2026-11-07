@@ -254,12 +254,45 @@ test('email first: a known email needs no name; a new one asks for it', () => {
   assert.strictEqual(book.students[0].Name, 'Jess Lee');
 });
 
-test('code source is recorded', () => {
-  const src = fn('codeSource_');
+test('with no tags yet, any code works and its source is recorded', () => {
+  const src = (code) => fn('codeSource_')({}, code).source;
   assert.strictEqual(src({ t: 'static' }), 'static');
   assert.strictEqual(src({}), 'direct');
   assert.strictEqual(src(null), 'direct');
   assert.strictEqual(src({ t: '59441023', s: 'abc' }), 'unverified');
+});
+
+const TAGS = [
+  { Code: 'kqmzabhrdpsn', Name: 'Front door', Active: 'yes' },
+  { Code: 'pfjxwaecnbrd', Name: 'Totem 2' },
+  { Code: 'retiredcode1', Name: 'Old QR', Active: 'no' },
+];
+
+test('once there are tags, only their codes check in, and the Log says which sign', () => {
+  const book = makeBook({ tags: TAGS });
+  const res = checkin(book, at(MON, '18:55'), { code: { t: 'pfjxwaecnbrd' } });
+  assert.strictEqual(res.status, 'ok');
+  assert.strictEqual(book.log[0].Source, 'Totem 2');
+  for (const code of [{ t: 'static' }, {}, null, { t: 'retiredcode1' }, { t: 'KQMZABHRDPSN' }]) {
+    const no = checkin(makeBook({ tags: TAGS }), at(MON, '18:55'), { code });
+    assert.strictEqual(no.ok, false);
+    assert.strictEqual(no.status, 'needTag');
+  }
+});
+
+test('without a code nothing is written: no new student, no unscheduled row', () => {
+  const book = makeBook({ tags: TAGS });
+  checkin(book, at(MON, '18:55'), { code: { t: 'nope' } });
+  checkin(book, at(MON, '12:00'), { code: {}, unscheduled: true, note: 'hi' });
+  assert.strictEqual(book.students.length, 0);
+  assert.strictEqual(book.log.length, 0);
+});
+
+test('the owner\'s check-in needs no code', () => {
+  const book = makeBook({ tags: TAGS });
+  const res = fn('ownerCheckin_')(book, { email: 'jess@example.com', name: 'Jess Lee', classIds: ['K1'] }, at(MON, '21:00'), makeIo());
+  assert.strictEqual(res.status, 'ok');
+  assert.strictEqual(book.log[0].Source, 'owner');
 });
 
 // ------------------------------------------------------------------ money
