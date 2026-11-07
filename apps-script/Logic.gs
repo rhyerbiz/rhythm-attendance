@@ -609,7 +609,7 @@ function testClasses_(scenario, now, cfg) {
   switch (scenario) {
     case 'regular': return [mk(1, 'Adult Hip Hop', base + 10, 75)];
     case 'one': return [mk(1, 'Dance 101', base + 10, 60)];
-    case 'two': return [mk(1, 'Dance 101', base + 10, 60), mk(2, 'Couples Dance Class', base + 20, 60)];
+    case 'two': return [mk(1, 'Company Practice', base + 10, 60, 0), mk(2, 'Dance 101', base + 20, 60)];
     case 'series': return [mk(1, 'Company Practice', base + 10, 120, 0), mk(2, 'Adult Hip Hop', base + 130, 75)];
     case 'early': return [mk(1, 'Adult Hip Hop', base + 120, 75)];
     case 'late': return [mk(1, 'Dance 101', base - 100, 60)];
