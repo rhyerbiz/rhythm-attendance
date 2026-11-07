@@ -229,8 +229,9 @@ function sheetIo_(book) {
       if (!row._row) return;
       const sh = ss.getSheetByName(tab);
       Object.keys(fields).forEach(function (h) {
-        const col = book.headers[tab].indexOf(h) + 1;
-        if (col) sh.getRange(row._row, col).setValue(toCell_(fields[h], tz));
+        let col = book.headers[tab].indexOf(h) + 1;
+        if (!col) col = addHeader_(sh, book.headers[tab], h); // a tab from before this column existed
+        sh.getRange(row._row, col).setValue(toCell_(fields[h], tz));
       });
     },
     append: function (tab, row) {
@@ -238,6 +239,15 @@ function sheetIo_(book) {
       ss.getSheetByName(tab).appendRow(headers.map(function (h) { return toCell_(row[h], tz); }));
     },
   };
+}
+
+/** Adds a header at the right of row 1 (bold), records it in `headers`, and returns its column number. */
+function addHeader_(sh, headers, h) {
+  let last = headers.length;
+  while (last > 0 && !headers[last - 1]) last--; // after the last real header, not after stray blank ones
+  sh.getRange(1, last + 1).setValue(h).setFontWeight('bold');
+  headers[last] = h;
+  return last + 1;
 }
 
 /**
@@ -295,7 +305,12 @@ function setup() {
 
   Object.keys(SCHEMA).forEach(function (tab) {
     let sh = ss.getSheetByName(tab);
-    if (sh) return;
+    if (sh) {
+      // An older tab gets any columns added since, on the right; nothing is moved or renamed.
+      const have = sh.getLastColumn() ? sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(function (h) { return String(h).trim(); }) : [];
+      SCHEMA[tab].forEach(function (h) { if (have.indexOf(h) < 0) addHeader_(sh, have, h); });
+      return;
+    }
     sh = ss.insertSheet(tab);
     sh.getRange(1, 1, 1, SCHEMA[tab].length).setValues([SCHEMA[tab]]).setFontWeight('bold');
     sh.setFrozenRows(1);

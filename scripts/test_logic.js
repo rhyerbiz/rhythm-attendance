@@ -552,6 +552,26 @@ test('chatLink goes to checked-in students only when it is an https link', () =>
   assert.strictEqual(fn('handleRequest_')(withLink('https://t.me/+abc123'), { action: 'ping' }, at(MON, '12:00'), makeIo()).chatLink, undefined);
 });
 
+test('the chat card is full for the first three check-ins, then one line, and gone once joined or hidden', () => {
+  const book = makeBook({ config: makeBook().config.concat([{ Key: 'chatLink', Value: 'https://t.me/+abc123' }]) });
+  const days = ['2026-11-02', '2026-11-04', '2026-11-09', '2026-11-11', '2026-11-16'];
+  const modes = days.map((d) => checkin(book, at(d, '18:50')).chatMode);
+  same(modes, ['full', 'full', 'full', 'mini', 'mini']);
+  // Joining is recorded in Students → Chat, so it follows the person, whatever phone they use.
+  const io = updIo();
+  assert.strictEqual(fn('handleRequest_')(book, { action: 'chat', email: 'JESS@example.com', choice: 'joined' }, at('2026-11-16', '19:00'), io).ok, true);
+  assert.strictEqual(book.students[0].Chat, 'joined 2026-11-16');
+  assert.strictEqual(io.updated[0][0], 'Students');
+  const after = checkin(book, at('2026-11-18', '18:50'));
+  assert.strictEqual(after.chatMode, '');
+  assert.strictEqual(after.chatLink, '');
+  // Hiding works the same; an unknown email changes nothing.
+  checkin(book, at('2026-11-18', '18:51'), { email: 'sam@example.com', name: 'Sam Park' });
+  fn('handleRequest_')(book, { action: 'chat', email: 'sam@example.com', choice: 'hidden' }, at('2026-11-18', '19:00'), updIo());
+  assert.strictEqual(book.students[1].Chat, 'hidden 2026-11-18');
+  assert.strictEqual(fn('handleRequest_')(book, { action: 'chat', email: 'nobody@example.com' }, at('2026-11-18', '19:00'), updIo()).ok, false);
+});
+
 // ------------------------------------------------------------------ Wix sync
 const WIX_SESSIONS = [
   { title: 'Dance 101', serviceId: 'c0549875-d10f', start: '2026-11-09T19:00:00', end: '2026-11-09T20:00:00', status: 'CONFIRMED', type: 'CLASS' },

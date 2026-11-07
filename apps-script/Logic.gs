@@ -17,7 +17,7 @@ const APP_VERSION = '1.0.0';
 const SCHEMA = {
   Config: ['Key', 'Value', 'Notes'],
   Schedule: ['ClassID', 'Class', 'Days', 'Start', 'Minutes', 'Price', 'Active', 'FirstDate', 'LastDate'],
-  Students: ['StudentID', 'Name', 'Email', 'Phone', 'Venmo', 'FirstSeen', 'Notes'],
+  Students: ['StudentID', 'Name', 'Email', 'Phone', 'Venmo', 'FirstSeen', 'Notes', 'Chat'],
   Log: ['CheckinID', 'When', 'ClassDate', 'StudentID', 'Student', 'ClassID', 'Class', 'Price', 'Source', 'Status', 'Note'],
   Packages: ['PackageID', 'Student', 'Classes', 'Purchased', 'Expires', 'Amount', 'Note'],
   Plans: ['PlanID', 'Student', 'Plan', 'Start', 'End', 'Note'],
@@ -48,7 +48,7 @@ const CONFIG_NOTES = {
   lateMinutesAfterEnd: 'Check-in stays open this many minutes after a class ends, for anyone who forgot on the way in.',
   ownerEmail: 'Where the weekly summary goes. Blank = the account that owns this sheet.',
   lapsedAfterDays: 'A regular who has not been in for this many days shows as lapsed.',
-  chatLink: "Invite link to the studio's group chat (e.g. a Telegram invite link). Students see a Join button after checking in. Blank = no button.",
+  chatLink: "Invite link to the studio's group chat (e.g. a Telegram invite link). Students see a Join button after checking in, until they join or hide it (Students → Chat). Blank = no button. After changing the link, clear the Chat column to show it to everyone again.",
   testScenarios: 'Your dev copy only: yes lets the test links from "Make test links for testers" pretend classes are on. Leave it no in the studio\'s copy.',
   pageUrl: 'The check-in page\'s address (e.g. https://checkin.yourstudio.com/). Used to show the full address for a new sign\'s NFC tag and QR code.',
   wixPacks: 'Wix pricing plans that are class passes, with how many classes each, e.g. "Single Class = 1, 10 Class Pass = 10". A purchase becomes credits, like a Packages row. Any other Wix plan counts like a Plans row (covers every class while it runs).',
@@ -588,7 +588,41 @@ function resetTester_(book, student, now, io) {
     p.Status = 'void';
     io.update('Payments', p, { Status: 'void' });
   });
+  // …and the group chat card starts over for them too.
+  if (str_(student.Chat)) {
+    student.Chat = '';
+    io.update('Students', student, { Chat: '' });
+  }
   return cleared;
+}
+
+// ------------------------------- group chat ---------------------------------
+
+// The full Join card for a student's first few check-ins, then one quiet line.
+const CHAT_FULL_VISITS = 3;
+
+/**
+ * How the page should show the group chat for this student: 'full', 'mini' or
+ * '' (not at all). Decided here from the Students tab's Chat column and their
+ * check-ins, so it follows the person, not the phone: Safari clearing the
+ * phone's storage, or a new phone, changes nothing.
+ */
+function chatMode_(book, cfg, student) {
+  if (!/^https:\/\/\S+$/.test(cfg.chatLink) || str_(student.Chat)) return '';
+  const visits = liveLog_(book).filter(function (l) { return str_(l.StudentID) === str_(student.StudentID); }).length;
+  return visits < CHAT_FULL_VISITS ? 'full' : 'mini'; // counted before today's check-in is written
+}
+
+/** The student tapped Join or "Hide this": recorded in Students → Chat, so the card stops showing. */
+function chatChoice_(book, req, now, io) {
+  const student = findStudentByEmail_(book, cleanEmail_(req.email));
+  const choice = str_(req.choice) === 'hidden' ? 'hidden' : 'joined';
+  if (!student) return { ok: false, error: "We couldn't find you." };
+  if (!str_(student.Chat)) {
+    student.Chat = choice + ' ' + now.date;
+    io.update('Students', student, { Chat: student.Chat });
+  }
+  return { ok: true };
 }
 
 /**
@@ -627,6 +661,7 @@ function handleRequest_(book, req, now, io) {
   if (action === 'ping') return { ok: true, studio: cfg.studioName, version: APP_VERSION };
   if (action === 'checkin') return checkin_(book, cfg, req, now, io, {});
   if (action === 'declarePayment') return declarePayment_(book, cfg, req, now, io);
+  if (action === 'chat') return chatChoice_(book, req, now, io);
   return { ok: false, error: 'Unknown request.' };
 }
 
@@ -674,9 +709,11 @@ function checkin_(book, cfg, req, now, io, opts) {
     isNew = true;
   }
 
-  // The chat link is only ever sent to someone who has checked in, never put in the page itself.
-  const chatLink = /^https:\/\/\S+$/.test(cfg.chatLink) ? cfg.chatLink : '';
-  const base = { ok: true, studio: cfg.studioName, student: studentView_(student), isNew: isNew, chatLink: chatLink };
+  // The chat link is only ever sent to someone who has checked in, never put in the page itself,
+  // and only while they haven't joined or hidden it (Students → Chat).
+  const chatMode = chatMode_(book, cfg, student);
+  const base = { ok: true, studio: cfg.studioName, student: studentView_(student), isNew: isNew,
+    chatLink: chatMode ? cfg.chatLink : '', chatMode: chatMode };
   // A test link (dev only) swaps the real schedule for its scenario's pretend classes.
   const classes = from.scenario ? testClasses_(from.scenario, now, cfg) : classesFrom_(book, cfg);
   const avail = opts.anyTimeToday

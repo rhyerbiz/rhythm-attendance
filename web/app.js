@@ -19,7 +19,6 @@
   var CODE = { t: params.get('t') || '', s: params.get('s') || '' };
   var KEY = 'rhythm.student';
   var STUDIO_KEY = 'rhythm.studio';
-  var CHAT_KEY = 'rhythm.chatJoined'; // the chat link this phone already tapped, so regulars aren't asked again
   var app = document.getElementById('app');
 
   // ------------------------------------------------------------- storage
@@ -48,13 +47,15 @@
   })();
 
   // ----------------------------------------------------------------- api
-  function api(req) {
+  // `opts.keepalive`: let the request finish even if the page is being left (e.g. Telegram opening).
+  function api(req, opts) {
     if (MOCK) return window.MockBackend.handle(req);
     // text/plain keeps this a "simple" request: no CORS preflight, which Apps Script can't answer.
     return fetch(ENV.apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(req),
+      keepalive: !!(opts && opts.keepalive),
     }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
@@ -101,26 +102,15 @@
     on('#notyou', 'click', function () { forgetMe(); viewRegister({}); });
   }
 
-  // "Join our group chat": shown until this phone taps Join or "Hide this". A new link (Config chatLink)
-  // shows again. After a few check-ins it shrinks to one quiet line, so regulars aren't nagged.
-  var CHAT_SEEN_KEY = 'rhythm.chatSeen'; // {link, n}: how many check-ins this phone has been shown this link
-  var CHAT_FULL_TIMES = 3;
-  var chatCounted = false;              // count once per visit, however many times the screen redraws
-  function chatSeen(link) {
-    var seen = { link: link, n: 0 };
-    try {
-      var s = JSON.parse(localStorage.getItem(CHAT_SEEN_KEY) || 'null');
-      if (s && s.link === link) seen = s;
-      if (!chatCounted) { chatCounted = true; seen.n++; localStorage.setItem(CHAT_SEEN_KEY, JSON.stringify(seen)); }
-    } catch (e) { /* no storage: always the full card */ }
-    return seen.n;
-  }
+  // "Join our group chat". The API decides whether and how to show it (res.chatMode: 'full' for a
+  // student's first few check-ins, then 'mini', one quiet line), from the Students tab, so it follows
+  // the person rather than the phone. Join or "Hide this" is sent back and recorded there.
+  var chatChosen = false; // tapped on this visit: don't redraw it while they're still on the page
   function chatHtml(res) {
     var link = res && res.chatLink;
-    if (!link) return '';
-    try { if (localStorage.getItem(CHAT_KEY) === link) return ''; } catch (e) { /* show it */ }
+    if (!link || !res.chatMode || chatChosen) return '';
     var hide = '<button class="linkish" id="chathide" type="button">Already in the group? Hide this</button>';
-    if (chatSeen(link) > CHAT_FULL_TIMES) {
+    if (res.chatMode === 'mini') {
       return '<p class="foot small chatmini" id="chatcard">' +
         '<a id="chat" href="' + esc(link) + '" target="_blank" rel="noopener">Join the studio\'s group chat</a>' +
         ' · <button class="linkish" id="chathide" type="button">Hide</button></p>';
@@ -133,12 +123,15 @@
       '</div>';
   }
   function bindChat(res) {
-    var done = function (delay) {
-      try { localStorage.setItem(CHAT_KEY, res.chatLink); } catch (e) { /* asked again next time */ }
+    var done = function (choice, delay) {
+      chatChosen = true;
+      // Fire and forget: keepalive lets it finish while Telegram opens. If it's lost, the card
+      // simply shows again next time.
+      api({ action: 'chat', email: res.student.email, choice: choice }, { keepalive: true }).catch(function () { /* shown again next time */ });
       setTimeout(function () { var c = app.querySelector('#chatcard'); if (c) c.remove(); }, delay);
     };
-    on('#chat', 'click', function () { done(400); });
-    on('#chathide', 'click', function () { done(0); });
+    on('#chat', 'click', function () { done('joined', 400); });
+    on('#chathide', 'click', function () { done('hidden', 0); });
   }
 
   // A list of today's classes to tick. Ones already checked in to show as done.
@@ -232,7 +225,6 @@
   // A tester's "Start over" link: their test check-ins are cleared, and this phone forgets them.
   function viewReset(res) {
     forgetMe();
-    try { localStorage.removeItem(CHAT_KEY); } catch (e) { /* nothing stored */ }
     render(
       '<div class="card center">' +
         CHECK +

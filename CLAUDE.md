@@ -106,7 +106,11 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     it, so it costs nothing and isn't a visit until the owner fills in Class and sets `ok`
     (or `void`). `reviewItems_` lists them on the Dashboard and in the weekly email.
 11b. **Group chat:** Config `chatLink` (https only) is returned in check-in responses, never put
-    in the static page. The page shows a Join button until that phone has tapped that link.
+    in the static page. `chatMode_` decides from the Sheet, not the phone (Safari clears page
+    storage after 7 days without interaction): 'full' card for a student's first 3 check-ins,
+    then 'mini' (one line), '' once Students → Chat is filled. Join / "Hide this" sends
+    `action: 'chat'` (fire-and-forget, keepalive), which writes `joined|hidden <date>` there.
+    New columns like Chat are added to older tabs by `addHeader_` (setup, or on first write).
 11c. **Owner check-in** (`ownerCheckin_`, menu "Check someone in…"): same rules, but any class
     today at any time, `Source = owner`. Only Code.gs calls it; the web API passes `{}` options,
     so a request can't ask for it.
