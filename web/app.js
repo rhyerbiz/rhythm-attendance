@@ -239,7 +239,10 @@
         card.remove();
       });
       card.querySelector('#pksave').addEventListener('click', function () {
-        var id = randomBytes(32), handle = b64url(id);
+        // The passkey carries the email itself (it's worth what the email is worth), so it keeps
+        // working even if the Sheet forgets it. A rare email over 64 bytes gets a random handle.
+        var mail = new TextEncoder().encode(me.email);
+        var id = mail.length <= 64 && /^[ -~]+$/.test(me.email) ? mail : randomBytes(32), handle = b64url(id);
         navigator.credentials.create({ publicKey: {
           rp: { name: studioName || 'Studio check-in', id: location.hostname },
           user: { id: id, name: me.email, displayName: (res.student && res.student.name) || me.email },
@@ -549,7 +552,11 @@
         setStudio(res.studio);
         if (res.student) saveMe(me = { name: res.student.name, email: res.student.email });
         if (!res.ok && res.status === 'needTag') return viewNeedTag();
-        if (!res.ok && res.status === 'needDetails') return viewRegister(me, res.needName ? '' : res.error, !!res.needName);
+        if (!res.ok && res.status === 'needDetails') {
+          // A passkey for an email the studio doesn't know yet: show that email, and ask the name.
+          if (res.email) me = { name: '', email: res.email };
+          return viewRegister({ name: me.name, email: me.email }, res.needName ? '' : res.error, !!res.needName);
+        }
         if (!res.ok) return viewError(res.error || 'Something went wrong.', retry);
         if (res.status === 'choose') return viewChoose(me, res);
         if (res.status === 'noClass') return viewNoClass(me, res);

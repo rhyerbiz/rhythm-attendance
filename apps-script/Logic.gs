@@ -706,14 +706,38 @@ function handleRequest_(book, req, now, io) {
 //
 // Optional, so a phone that forgets a student (Safari clears a page's storage after 7 days
 // without interaction) can check in with Face ID / fingerprint instead of typing their email.
-// The passkey lives in the phone's keychain, which that clean-up doesn't touch. The page makes
-// a random handle, saves it inside the passkey (its "user handle"), and sends it here, to
-// Students → Passkey. Checking in with the passkey sends the handle back, which finds the
-// student. There's no signature check (Apps Script can't verify one), so a passkey is worth
-// exactly what knowing the student's email is worth, never more; the handle is a 256-bit
-// random secret that only the passkey and the Sheet hold, and no answer ever includes it.
+// The passkey lives in the phone's keychain, which that clean-up doesn't touch. Its "user
+// handle" is the student's email (see emailFromPasskey_; early ones had a random handle), also
+// sent here to Students → Passkey to mark that they have one. Checking in with the passkey
+// sends the handle back. There's no signature check (Apps Script can't verify one), so a
+// passkey is worth exactly what knowing the student's email is worth, never more.
 
-function validPasskeyHandle_(h) { return /^[A-Za-z0-9_-]{40,100}$/.test(str_(h)); }
+function validPasskeyHandle_(h) { return /^[A-Za-z0-9_-]{8,100}$/.test(str_(h)); }
+
+/**
+ * New passkeys carry the student's email itself as their handle (base64url of the plain-ASCII
+ * email): a passkey is worth what an email is worth anyway, and this way it still works after
+ * the Sheet's Passkey cell is cleared, or for an email the Sheet doesn't know yet. Older
+ * passkeys carry a random handle, found through the Passkey column. Returns '' if it isn't one.
+ */
+function emailFromPasskey_(handle) {
+  const h = str_(handle);
+  if (!validPasskeyHandle_(h)) return '';
+  const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  let bits = 0, n = 0, out = '';
+  for (let i = 0; i < h.length; i++) {
+    n = (n << 6) | abc.indexOf(h.charAt(i));
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      const c = (n >> bits) & 255;
+      if (c < 32 || c > 126) return ''; // not plain text: a random handle
+      out += String.fromCharCode(c);
+    }
+  }
+  const email = cleanEmail_(out);
+  return validEmail_(email) ? email : '';
+}
 
 function findStudentByPasskey_(book, handle) {
   const h = str_(handle);
@@ -755,8 +779,8 @@ function checkin_(book, cfg, req, now, io, opts) {
   // Checking in with a passkey instead of an email (see passkeySaved_).
   if (req.passkey) {
     const byKey = findStudentByPasskey_(book, req.passkey);
-    if (!byKey) return { ok: false, status: 'needDetails', error: 'That passkey isn\'t recognized any more. Please enter your email.' };
-    email = cleanEmail_(byKey.Email);
+    email = byKey ? cleanEmail_(byKey.Email) : emailFromPasskey_(req.passkey);
+    if (!email) return { ok: false, status: 'needDetails', error: 'That passkey isn\'t recognized any more. Please enter your email.' };
   }
   if (!validEmail_(email)) return { ok: false, status: 'needDetails', error: 'Please enter a valid email.' };
 
@@ -770,7 +794,8 @@ function checkin_(book, cfg, req, now, io, opts) {
   let student = findStudentByEmail_(book, email);
   let isNew = false;
   if (!student) {
-    if (!name) return { ok: false, status: 'needDetails', needName: true, error: 'Please enter your name.' };
+    // A passkey brought the email: send it back so the page can show it, filled in, with the name box.
+    if (!name) return { ok: false, status: 'needDetails', needName: true, error: 'Please enter your name.', email: req.passkey ? email : undefined };
     // A cap on sign-ups (Code.gs: so many an hour), so a script can't fill the Sheet with made-up students.
     if (io.allowNewStudent && !io.allowNewStudent()) {
       return { ok: false, status: 'busy', error: 'Lots of new sign-ups right now. Please let your instructor know you\'re here.' };

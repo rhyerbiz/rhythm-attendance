@@ -136,16 +136,18 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     `testScenarios` is yes; never set it in prod. Menu "Make test links for testers" fills a
     "Test links" tab. docs/TESTING.md is built around them.
 11h. **Passkeys (optional):** from a student's second check-in the page offers "Save a passkey"
-    when they have none (`passkeyOffer`) and the phone supports it; a first visit shows nothing. The page makes a random 32-byte handle,
-    puts it in the passkey's user handle, and sends it (`action: 'passkey'`, needs the sign's
-    code) to Students → Passkey. On the email screen, passkey autofill (`autocomplete="email
+    when they have none (`passkeyOffer`) and the phone supports it; a first visit shows nothing.
+    The passkey's user handle is the student's email itself (≤ 64 plain-ASCII bytes, else a random
+    handle), sent too (`action: 'passkey'`, needs the sign's code) to Students → Passkey, which
+    only marks that they have one. On the email screen, passkey autofill (`autocomplete="email
     webauthn"` + a conditional `credentials.get`) suggests it above the keyboard only on a phone
     that has one; phones without autofill get a "Check in with a passkey" button. Either sends
-    the handle back (`req.passkey`) instead of an email. No signature check (Apps Script can't verify
-    P-256), so a passkey is worth what an email is worth; the handle is never returned in any
-    answer. WebAuthn calls run straight from a tap (Safari needs the user gesture), and every
-    failure falls back to the email box. rpId = the page's hostname, so dev and prod passkeys
-    are separate. Start over (test links) clears a tester's Passkey too.
+    the handle back (`req.passkey`): a known Passkey value finds the student, otherwise
+    `emailFromPasskey_` reads the email out of it (an unknown email gets the name step with the
+    email filled in). So clearing the Passkey cell never breaks a passkey. No signature check
+    (Apps Script can't verify P-256): a passkey is worth exactly what an email is worth. WebAuthn
+    calls run straight from a tap (Safari needs the user gesture), and every failure falls back
+    to the email box. rpId = the page's hostname, so dev and prod passkeys are separate.
 12. **The Sheet's `studioName` wins.** The page remembers the last name the API sent;
     `config.js` only covers a phone's first visit.
 13. **Backups:** `backupNow` (nightly trigger) copies the SCHEMA tabs — values only, no script —

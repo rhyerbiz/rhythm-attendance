@@ -642,6 +642,28 @@ test('an unknown or malformed passkey falls back to asking for the email; saving
   assert.strictEqual(tagged.students[0].Passkey, undefined);
 });
 
+const emailHandle = (e) => Buffer.from(e).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+test('a passkey carrying the email still works after the Passkey cell is cleared (e.g. Start over)', () => {
+  const book = makeBook();
+  checkin(book, at(MON, '18:55'));
+  book.students[0].Passkey = ''; // cleared
+  const res = checkin(book, at('2026-11-04', '18:55'), { email: '', name: '', passkey: emailHandle('Jess@Example.com') });
+  assert.strictEqual(res.status, 'ok');
+  assert.strictEqual(res.student.email, 'jess@example.com');
+});
+
+test('a passkey for an email the studio doesn\'t know asks only for the name, with the email filled in', () => {
+  const book = makeBook();
+  const res = checkin(book, at(MON, '18:55'), { email: '', name: '', passkey: emailHandle('new.person@example.com') });
+  assert.strictEqual(res.status, 'needDetails');
+  assert.strictEqual(res.needName, true);
+  assert.strictEqual(res.email, 'new.person@example.com');
+  assert.strictEqual(book.students.length, 0);
+  // A plain email check-in never echoes an email back in that answer.
+  assert.strictEqual(checkin(makeBook(), at(MON, '18:55'), { email: 'x@example.com', name: '' }).email, undefined);
+});
+
 // ------------------------------------------------------------------ Wix sync
 const WIX_SESSIONS = [
   { title: 'Dance 101', serviceId: 'c0549875-d10f', start: '2026-11-09T19:00:00', end: '2026-11-09T20:00:00', status: 'CONFIRMED', type: 'CLASS' },
