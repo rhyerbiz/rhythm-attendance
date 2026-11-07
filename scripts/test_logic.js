@@ -811,7 +811,7 @@ test('a test link pretends its classes are on, at any hour, with real check-ins 
   const book = testBook(true);
   const res = checkin(book, at('2026-11-03', '10:02'), { code: { t: 'testonecodex' } }); // a Tuesday morning, no real class
   assert.strictEqual(res.status, 'ok');
-  assert.strictEqual(res.checkins[0].name, 'Salsa (test)');
+  assert.strictEqual(res.checkins[0].name, 'Dance 101 (test)');
   assert.strictEqual(res.checkins[0].time, '10:15am');
   assert.strictEqual(book.log[0].ClassID, 'T-one-1');
   assert.strictEqual(book.log[0].Source, 'Test: one');

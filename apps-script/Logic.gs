@@ -586,10 +586,10 @@ const TEST_SCENARIOS = [
   { id: 'regular', label: 'A regular on a monthly plan (the usual)', try: 'Check in. It should say your monthly plan covers it: nothing to pay.' },
   { id: 'one', label: 'A class is about to start', try: 'Check in. You should be checked straight in, with what you owe for a drop-in.' },
   { id: 'two', label: 'Two classes at the same time', try: 'Pick one or both classes.' },
-  { id: 'series', label: 'Staying for three classes in a row', try: 'Check in to the first, then add the others from "Taking another class today?"' },
+  { id: 'series', label: 'Staying for two classes in a row (Company practice, then Hip Hop)', try: 'Check in to the practice, then add Hip Hop from "Taking another class today?"' },
   { id: 'early', label: "You're early (class in 2 hours)", try: 'You can check in now, or not yet.' },
   { id: 'late', label: 'You forgot: class ended 40 minutes ago', try: 'You should still be checked in.' },
-  { id: 'free', label: 'A free class', try: 'Check in. Nothing to pay.' },
+  { id: 'free', label: 'A class with nothing extra to pay (a Company practice)', try: 'Check in. Nothing to pay.' },
   { id: 'none', label: 'No class today', try: 'Try "Here for a class that isn\'t listed?" with a short note.' },
   { id: 'reset', label: 'Start over', try: 'Clears your test check-ins (only yours) and makes this phone forget you.' },
 ];
@@ -597,23 +597,24 @@ const TEST_SCENARIOS = [
 /** The pretend classes for a scenario, around `now`, shaped like classFrom_() makes them. */
 function testClasses_(scenario, now, cfg) {
   const base = Math.ceil(now.minutes / 5) * 5;
-  const mk = function (n, name, start, price, day) {
+  // The studio's own classes (as in Wix), so testers see names they know.
+  const mk = function (n, name, start, minutes, price, day) {
     day = day || now.date;
     return {
       id: 'T-' + scenario + '-' + n, name: name + ' (test)', days: [dowOf_(day)],
-      start: Math.max(0, Math.min(start, 23 * 60)), minutes: 60, price: price == null ? cfg.dropInPrice : price,
+      start: Math.max(0, Math.min(start, 23 * 60)), minutes: minutes, price: price == null ? cfg.dropInPrice : price,
       active: true, first: day, last: day,
     };
   };
   switch (scenario) {
-    case 'regular': return [mk(1, 'Adult Hip Hop', base + 10)];
-    case 'one': return [mk(1, 'Salsa', base + 10)];
-    case 'two': return [mk(1, 'Bachata', base + 10), mk(2, 'Cumbia', base + 20)];
-    case 'series': return [mk(1, 'Tango 1', base + 10), mk(2, 'Tango 2', base + 70), mk(3, 'Styling Lab', base + 130)];
-    case 'early': return [mk(1, 'Hip Hop', base + 120)];
-    case 'late': return [mk(1, 'West Coast Swing', base - 100)];
-    case 'free': return [mk(1, 'Open Practice', base + 5, 0)];
-    case 'none': return [mk(1, 'Zouk', 19 * 60, null, addDays_(now.date, 1))];
+    case 'regular': return [mk(1, 'Adult Hip Hop', base + 10, 75)];
+    case 'one': return [mk(1, 'Dance 101', base + 10, 60)];
+    case 'two': return [mk(1, 'Dance 101', base + 10, 60), mk(2, 'Couples Dance Class', base + 20, 60)];
+    case 'series': return [mk(1, 'Company Practice', base + 10, 120, 0), mk(2, 'Adult Hip Hop', base + 130, 75)];
+    case 'early': return [mk(1, 'Adult Hip Hop', base + 120, 75)];
+    case 'late': return [mk(1, 'Dance 101', base - 100, 60)];
+    case 'free': return [mk(1, 'Company Practice', base + 5, 60, 0)];
+    case 'none': return [mk(1, 'Adult Hip Hop', 19 * 60 + 15, 75, null, addDays_(now.date, 1))];
     default: return [];
   }
 }

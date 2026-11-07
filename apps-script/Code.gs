@@ -325,8 +325,8 @@ function setup() {
   const sched = ss.getSheetByName('Schedule');
   if (sched.getLastRow() === 1) {
     sched.getRange(2, 1, 2, 7).setValues([
-      ['', 'Example: Salsa Level 1', 'Mon, Wed', '7:00 PM', 60, '', 'no'],
-      ['', 'Example: Open Practice', 'Fri', '6:00 PM', 90, 0, 'no'],
+      ['', 'Example: Dance 101', 'Mon', '7:00 PM', 60, '', 'no'],
+      ['', 'Example: Company Practice', 'Wed', '5:00 PM', 120, 0, 'no'],
     ]);
     sched.getRange('D:D').setNumberFormat('@'); // keep "7:00 PM" as typed
   }

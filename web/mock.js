@@ -23,22 +23,21 @@ window.MockBackend = (function () {
     var tomorrow = DAY_LABELS[dowOf_(addDays_(now.date, 1))];
     var base = Math.ceil(now.minutes / 5) * 5;
     var rows = [];
-    if (scenario === 'one') rows.push({ ClassID: 'K1', Class: 'Salsa Level 1', Days: today, Start: hhmm(base + 10), Minutes: 60 });
+    if (scenario === 'one') rows.push({ ClassID: 'K1', Class: 'Dance 101', Days: today, Start: hhmm(base + 10), Minutes: 60 });
     if (scenario === 'two') {
-      rows.push({ ClassID: 'K1', Class: 'Salsa Level 1', Days: today, Start: hhmm(base + 10), Minutes: 60 });
-      rows.push({ ClassID: 'K2', Class: 'Bachata Basics', Days: today, Start: hhmm(base + 25), Minutes: 60 });
+      rows.push({ ClassID: 'K1', Class: 'Dance 101', Days: today, Start: hhmm(base + 10), Minutes: 60 });
+      rows.push({ ClassID: 'K2', Class: 'Couples Dance Class', Days: today, Start: hhmm(base + 25), Minutes: 60 });
     }
     if (scenario === 'series') {
-      rows.push({ ClassID: 'K1', Class: 'Salsa Level 1', Days: today, Start: hhmm(base + 10), Minutes: 60 });
-      rows.push({ ClassID: 'K5', Class: 'Salsa Level 2', Days: today, Start: hhmm(base + 70), Minutes: 60 });
-      rows.push({ ClassID: 'K6', Class: 'Styling Lab', Days: today, Start: hhmm(base + 130), Minutes: 60 });
+      rows.push({ ClassID: 'K3', Class: 'Company Practice', Days: today, Start: hhmm(base + 10), Minutes: 120, Price: 0 });
+      rows.push({ ClassID: 'K5', Class: 'Adult Hip Hop', Days: today, Start: hhmm(base + 130), Minutes: 75 });
     }
     // Ended 40 minutes ago: someone who forgot, checking in on the way out.
-    if (scenario === 'late') rows.push({ ClassID: 'K1', Class: 'Salsa Level 1', Days: today, Start: hhmm(base - 100), Minutes: 60 });
+    if (scenario === 'late') rows.push({ ClassID: 'K1', Class: 'Dance 101', Days: today, Start: hhmm(base - 100), Minutes: 60 });
     // Here two hours early: nothing open yet, but the class can already be picked.
-    if (scenario === 'early') rows.push({ ClassID: 'K1', Class: 'Salsa Level 1', Days: today, Start: hhmm(base + 120), Minutes: 60 });
-    if (scenario === 'free') rows.push({ ClassID: 'K3', Class: 'Open Practice', Days: today, Start: hhmm(base + 5), Minutes: 90, Price: 0 });
-    rows.push({ ClassID: 'K4', Class: 'West Coast Swing', Days: tomorrow, Start: '19:30', Minutes: 60 });
+    if (scenario === 'early') rows.push({ ClassID: 'K5', Class: 'Adult Hip Hop', Days: today, Start: hhmm(base + 120), Minutes: 75 });
+    if (scenario === 'free') rows.push({ ClassID: 'K3', Class: 'Company Practice', Days: today, Start: hhmm(base + 5), Minutes: 60, Price: 0 });
+    rows.push({ ClassID: 'K4', Class: 'Adult Hip Hop', Days: tomorrow, Start: '19:15', Minutes: 75 });
     return rows;
   }
 
@@ -97,7 +96,7 @@ window.MockBackend = (function () {
       '<select id="mk-scn" aria-label="Scenario">' +
         '<option value="one">One class starting</option>' +
         '<option value="two">Two classes starting</option>' +
-        '<option value="series">Series of three</option>' +
+        '<option value="series">Two in a row</option>' +
         '<option value="late">Forgot — class just ended</option>' +
         '<option value="early">Early for a class later today</option>' +
         '<option value="free">Free class starting</option>' +

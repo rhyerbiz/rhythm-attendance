@@ -396,7 +396,7 @@
       '<div class="card"><p style="margin:0"><b>Here for a class that isn\'t listed?</b></p>' +
         '<p class="small muted">Let the studio know you came. They\'ll match it to the right class.</p>' +
         '<label for="unote">Which class? (optional)</label>' +
-        '<input id="unote" maxlength="200" autocomplete="off" placeholder="e.g. Salsa makeup class">' +
+        '<input id="unote" maxlength="200" autocomplete="off" placeholder="e.g. Company practice">' +
         '<button class="btn secondary" id="anyway">I\'m here for a class</button>' +
       '</div>' +
       chatHtml(res) +
