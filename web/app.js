@@ -186,15 +186,32 @@
     for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
     return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
-  // Called straight from a tap: Safari only allows Face ID prompts from one, so nothing is awaited first.
-  function passkeyCheckIn() {
-    navigator.credentials.get({ publicKey: {
+  function passkeyRequest(extra) {
+    return navigator.credentials.get(Object.assign({ publicKey: {
       challenge: randomBytes(32), rpId: location.hostname, userVerification: 'preferred', timeout: 60000,
-    } }).then(function (cred) {
+    } }, extra)).then(function (cred) {
       var h = cred && cred.response && cred.response.userHandle;
       if (!h || !h.byteLength) throw new Error('no handle');
       checkin({ name: '', email: '', passkey: b64url(h) });
-    }).catch(function (e) {
+    });
+  }
+  // Passkey autofill: the keyboard's suggestions above the email box include "Sign in with passkey"
+  // only on a phone that has one for this site, so a new student sees an ordinary email box.
+  var pkAutofill = null;
+  function stopPasskeyAutofill() { if (pkAutofill) { pkAutofill.abort(); pkAutofill = null; } }
+  function startPasskeyAutofill() {
+    stopPasskeyAutofill();
+    pkAutofill = new AbortController();
+    passkeyRequest({ mediation: 'conditional', signal: pkAutofill.signal }).catch(function (e) {
+      if (e && (e.name === 'AbortError' || e.name === 'NotAllowedError')) return; // typed an email instead
+      viewRegister({}, 'That passkey didn\'t work. Please enter your email instead.');
+    });
+  }
+  // Older phones without autofill get a button. Called straight from the tap: Safari only allows
+  // Face ID prompts from one, so nothing is awaited first.
+  function passkeyCheckIn() {
+    stopPasskeyAutofill();
+    passkeyRequest({}).catch(function (e) {
       if (e && e.name === 'NotAllowedError') return; // cancelled, or no passkey here: the email box is still there
       viewRegister({}, 'That passkey didn\'t work. Please enter your email instead.');
     });
@@ -203,7 +220,7 @@
   function offerPasskey(me, res) {
     var declined = false;
     try { declined = localStorage.getItem(PASSKEY_KEY) === 'declined'; } catch (e) { /* ask */ }
-    if (!passkeysUsable() || res.hasPasskey || declined || !me.email) return;
+    if (!passkeysUsable() || !res.passkeyOffer || declined || !me.email) return;
     var check = PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable;
     (check ? check.call(PublicKeyCredential) : Promise.resolve(false)).then(function (ok) {
       var foot = app.querySelector(':scope > .foot:last-child'); // the page's "Not you?" line, not a card's
@@ -235,7 +252,7 @@
         }).then(function (r) {
           if (!r.ok) throw new Error(r.error || 'not saved');
           card.innerHTML = '<p style="margin:0"><b>Passkey saved ✓</b></p>' +
-            '<p class="small muted" style="margin:4px 0 0">If this phone ever asks for your email, tap <b>Check in with a passkey</b> instead.</p>';
+            '<p class="small muted" style="margin:4px 0 0">If this phone ever asks for your email, you can check in with your passkey instead.</p>';
         }).catch(function (e) {
           if (e && e.name === 'NotAllowedError') return; // they cancelled: leave the offer up
           card.innerHTML = '<p class="small muted" style="margin:0">Couldn\'t save a passkey on this phone. That\'s fine: your email still works.</p>';
@@ -246,6 +263,7 @@
 
   function viewRegister(prefill, error, askName) {
     warmUp();
+    stopPasskeyAutofill();
     render(
       '<form class="card" id="reg" novalidate>' +
         (askName
@@ -254,17 +272,28 @@
             '<input id="name" name="name" autocomplete="name" autocapitalize="words" required autofocus value="' + esc(prefill.name) + '">'
           : '<h1>Check in</h1><p class="muted">Enter your email. This phone will remember you next time.</p>') +
         '<label for="email">Email</label>' +
-        '<input id="email" name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="off" required value="' + esc(prefill.email) + '"' + (askName ? '' : ' autofocus') + '>' +
+        '<input id="email" name="email" type="email" inputmode="email" autocomplete="' + (askName ? 'email' : 'email webauthn') + '" autocapitalize="off" required value="' + esc(prefill.email) + '"' + (askName ? '' : ' autofocus') + '>' +
         (error ? '<div class="error" role="alert">' + esc(error) + '</div>' : '') +
         '<button class="btn" type="submit">Check in</button>' +
         '<p class="small muted" style="margin-top:12px">Use the same email you book or pay with, so your classes and packages line up.</p>' +
-      '</form>' +
-      (!askName && passkeysUsable()
-        ? '<div class="card center" id="pkin"><p class="small muted" style="margin:0 0 4px">Saved a passkey before?</p>' +
-          '<button class="btn secondary" id="pkgo" type="button">Check in with a passkey</button></div>'
-        : '')
+      '</form>'
     );
-    on('#pkgo', 'click', passkeyCheckIn);
+    // A returning student whose phone forgot them: offer their passkey, if this phone can have one.
+    if (!askName && passkeysUsable()) {
+      var cond = PublicKeyCredential.isConditionalMediationAvailable;
+      (cond ? cond.call(PublicKeyCredential) : Promise.resolve(false)).then(function (autofill) {
+        var form = app.querySelector('#reg');
+        if (!form) return; // already moved on
+        if (autofill) return startPasskeyAutofill();
+        var card = document.createElement('div');
+        card.className = 'card center';
+        card.id = 'pkin';
+        card.innerHTML = '<p class="small muted" style="margin:0 0 4px">Saved a passkey before?</p>' +
+          '<button class="btn secondary" id="pkgo" type="button">Check in with a passkey</button>';
+        form.parentNode.insertBefore(card, form.nextSibling);
+        card.querySelector('#pkgo').addEventListener('click', passkeyCheckIn);
+      }).catch(function () { /* email only */ });
+    }
     on('#reg', 'submit', function (e) {
       e.preventDefault();
       var nameEl = app.querySelector('#name');
@@ -506,6 +535,7 @@
   // ---------------------------------------------------------------- flow
   // `extra`: {unscheduled, note} for "I'm here for a class" (safe to retry: one per day).
   function checkin(me, classIds, extra) {
+    stopPasskeyAutofill();
     viewBusy(me);
     var retry = function () { checkin(me, classIds, extra); };
     var req = { action: 'checkin', name: me.name || '', email: me.email, classIds: classIds || [], code: CODE };

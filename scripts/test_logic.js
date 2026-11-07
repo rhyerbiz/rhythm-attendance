@@ -600,6 +600,8 @@ test('a saved passkey checks the student in without their email, and is never se
   const book = makeBook();
   const first = checkin(book, at(MON, '18:55'));
   assert.strictEqual(first.hasPasskey, false);
+  assert.strictEqual(first.passkeyOffer, false); // not on a first visit
+  assert.strictEqual(checkin(book, at(MON, '19:50'), { classIds: ['K2'] }).passkeyOffer, true); // a returning student
   const io = updIo();
   const saved = fn('handleRequest_')(book, { action: 'passkey', email: 'jess@example.com', handle: HANDLE, code: { t: 'static' } }, at(MON, '18:56'), io);
   assert.strictEqual(saved.ok, true);
@@ -610,6 +612,7 @@ test('a saved passkey checks the student in without their email, and is never se
   assert.strictEqual(res.status, 'ok');
   assert.strictEqual(res.student.email, 'jess@example.com');
   assert.strictEqual(res.hasPasskey, true);
+  assert.strictEqual(res.passkeyOffer, false); // already has one
   assert.ok(!JSON.stringify(res).includes(HANDLE));
 });
 

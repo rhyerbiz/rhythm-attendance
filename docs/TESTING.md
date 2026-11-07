@@ -57,8 +57,10 @@ your email and name; after that your phone remembers you.
 - Tap the **Venmo** button once and back out: does Venmo open with the amount filled in? Back on
   the page, tap **Not yet**.
 - Try **Not you? Switch person** at the bottom: it should ask only for your email.
-- If it offers **Save a passkey**, try it (Face ID or fingerprint). Then tap **Not you? Switch
-  person**, and on the email screen tap **Check in with a passkey**: it should know who you are.
+- From your second check-in it may offer **Save a passkey**: try it (Face ID or fingerprint).
+  Then tap **Not you? Switch person**, tap the email box, and pick your passkey from the
+  suggestions above the keyboard (older phones show a **Check in with a passkey** button
+  instead). It should check you in without your email.
 - If the group chat button shows, tap it: it shouldn't come back after that.
 - Anything confusing or worded strangely, even if it worked.
 - Anything slow: roughly how long you waited.

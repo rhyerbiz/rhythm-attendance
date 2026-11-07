@@ -135,11 +135,13 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     declared payments (`resetTester_`, via `io.update`). All of it only works while Config
     `testScenarios` is yes; never set it in prod. Menu "Make test links for testers" fills a
     "Test links" tab. docs/TESTING.md is built around them.
-11h. **Passkeys (optional):** after a check-in the page offers "Save a passkey" when the student
-    has none (`hasPasskey`) and the phone supports it. The page makes a random 32-byte handle,
+11h. **Passkeys (optional):** from a student's second check-in the page offers "Save a passkey"
+    when they have none (`passkeyOffer`) and the phone supports it; a first visit shows nothing. The page makes a random 32-byte handle,
     puts it in the passkey's user handle, and sends it (`action: 'passkey'`, needs the sign's
-    code) to Students → Passkey. "Check in with a passkey" on the email screen sends the handle
-    back (`req.passkey`) instead of an email. No signature check (Apps Script can't verify
+    code) to Students → Passkey. On the email screen, passkey autofill (`autocomplete="email
+    webauthn"` + a conditional `credentials.get`) suggests it above the keyboard only on a phone
+    that has one; phones without autofill get a "Check in with a passkey" button. Either sends
+    the handle back (`req.passkey`) instead of an email. No signature check (Apps Script can't verify
     P-256), so a passkey is worth what an email is worth; the handle is never returned in any
     answer. WebAuthn calls run straight from a tap (Safari needs the user gesture), and every
     failure falls back to the email box. rpId = the page's hostname, so dev and prod passkeys
@@ -185,5 +187,5 @@ and tag it in git. `push.js --deploy` redeploys the existing deployment, so the 
   only (name just for a new email) and calls `navigator.storage.persist()`, so a forgotten
   student taps their autofilled email, or "Check in with a passkey" if they saved one (rule 11h).
 - Passkeys end to end on a real iPhone and an Android phone: the offer appears, Save shows Face
-  ID / fingerprint, and after clearing the site's data "Check in with a passkey" finds them. The
+  ID / fingerprint, and after "Not you?" the email box's passkey suggestion finds them. The
   preview has no authenticator, so only the code around the prompts was tested there.

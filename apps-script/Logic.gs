@@ -778,7 +778,9 @@ function checkin_(book, cfg, req, now, io, opts) {
   const chatMode = chatMode_(book, cfg, student);
   const base = { ok: true, studio: cfg.studioName, student: studentView_(student), isNew: isNew,
     chatLink: chatMode ? cfg.chatLink : '', chatMode: chatMode,
-    hasPasskey: !!str_(student.Passkey) }; // so the page only offers to save one when there isn't one
+    hasPasskey: !!str_(student.Passkey),
+    // Offer to save one only to a returning student without one: a first visit has enough on it.
+    passkeyOffer: !str_(student.Passkey) && liveLog_(book).some(function (l) { return str_(l.StudentID) === str_(student.StudentID); }) };
   // A test link (dev only) swaps the real schedule for its scenario's pretend classes.
   const classes = from.scenario ? testClasses_(from.scenario, now, cfg) : classesFrom_(book, cfg);
   const avail = opts.anyTimeToday
