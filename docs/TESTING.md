@@ -48,7 +48,12 @@ happening right now (a class about to start, two at once, and so on), so you can
 home, any time. Open them on your phone, one at a time, in this order. The first one asks for
 your email and name; after that your phone remembers you.
 
-*(Paste the links from the Test links tab here: what happens, what to try, and the link.)*
+**Start over any time:** the **Start over** link clears only your own test check-ins and makes
+your phone forget you, so you can run through everything again (the next link asks for your
+email).
+
+*(Paste the links from the Test links tab here: what happens, what to try, and the link. Put the
+Start over link right under the paragraph above.)*
 
 ### Things to look out for as you go
 
@@ -56,18 +61,19 @@ your email and name; after that your phone remembers you.
 - Tap a link **twice**: the second time should say you're already checked in.
 - Tap the **Venmo** button once and back out: does Venmo open with the amount filled in? Back on
   the page, tap **Not yet**.
+- On another test, tap **Yes, I paid** instead: it should say "Sent by Venmo" with the right
+  amount. Then open a different link: it should ask only for that new class, not the earlier one
+  you didn't pay for.
 - Try **Not you? Switch person** at the bottom: it should ask only for your email.
 - From your second check-in it may offer **Save a passkey**: try it (Face ID or fingerprint).
   Then tap **Not you? Switch person**, tap the email box, and pick your passkey from the
   suggestions above the keyboard (older phones show a **Check in with a passkey** button
   instead). It should check you in without your email.
-- If the group chat button shows, tap it: it shouldn't come back after that.
+- If the group chat button shows, tap it, or tap **Already in the group? Hide this**: either way
+  it shouldn't come back after that.
 - Anything confusing or worded strangely, even if it worked.
 - Anything slow: roughly how long you waited.
 - Anything that looked broken: text cut off, buttons hard to tap, odd colours in dark mode.
-
-To go through it all again, tap **Start over**. It clears only your own test check-ins and makes
-your phone forget you, so the next link asks for your email again.
 
 ### Reporting a problem
 
