@@ -21,8 +21,10 @@ Nothing a tester does reaches the studio's accounts.
    Running it again gives the same links.
 
 **How test links work:** each one pretends that scenario's classes are on, placed around the
-moment it's tapped, so testers can try everything any day, at any hour, from anywhere. The page
-is exactly what a student sees (plus the DEV badge). The check-ins are real rows in your dev
+moment it's tapped (late at night, around 8:50pm instead), and starts fresh every time it's
+opened: that tester's earlier check-ins on that link are voided first. So testers can try
+everything any day, at any hour, from anywhere. The page is exactly what a student sees (plus
+the DEV badge): nothing on it says "test" beyond the class names. The check-ins are real rows in your dev
 Sheet, with class names ending "(test)", so you can watch **Today**, **Log** and the
 **Dashboard** fill in. Several testers can use the same links: each is told apart by their email,
 and **Start over** only clears that tester's own test check-ins.
@@ -46,7 +48,9 @@ check that Venmo opens with the right amount, then back out without paying.
 
 Instead of the sign, you'll use the links below. Each one pretends a different situation is
 happening right now (a class about to start, two at once, and so on), so you can try them all from
-home, any time. Open them on your phone, one at a time, in this order.
+home, any time. Open them on your phone, one at a time, in this order. Each link starts fresh
+every time you open it, so you can repeat any of them. (Late in the evening, the class times
+shown may be earlier than your clock. That's expected.)
 
 **Start over any time:** the **Start over** link clears only your own test check-ins and makes
 your phone forget you, so you can run through everything again.
@@ -57,6 +61,7 @@ the link.)*
 ### Part 1: your first visit
 
 *Imitates a new student's first day.* Tap link 1. It asks for your email and your name, once.
+If you've tried these before, tap **Start over** first.
 It shows the usual case, a regular on a monthly plan: covered, nothing to pay.
 
 ### Part 2: coming back
@@ -87,7 +92,6 @@ To see the first-visit screen again, tap **Start over** and use a different emai
 
 ### Also worth trying
 
-- Tap a link **twice**: the second time should say you're already checked in.
 - On a drop-in test, tap **Yes, I paid** instead of **Not yet**: it should say "Sent by Venmo"
   with the right amount. Then open a different link: it should ask only for that new class, not
   the earlier one you didn't pay for.
