@@ -85,8 +85,11 @@
     document.getElementById('studio').textContent = studioName;
     document.title = 'Check in' + (studioName ? ' · ' + studioName : '');
   }
+  var testClock = '';
   function render(html) {
-    app.innerHTML = html;
+    app.innerHTML = html + (testClock
+      ? '<p class="small muted center">Test link, late at night: the times above are as if it were ' + esc(testClock) + ', so this situation fits in the day.</p>'
+      : '');
     var focus = app.querySelector('[autofocus]');
     if (focus) focus.focus();
   }
@@ -535,6 +538,7 @@
     apiRetry(req, 3)
       .then(function (res) {
         setStudio(res.studio);
+        testClock = res.testClock || ''; // a late-night test link (dev only), said on every screen
         if (res.student) saveMe(me = { name: res.student.name, email: res.student.email });
         if (!res.ok && res.status === 'needTag') return viewNeedTag();
         if (!res.ok && res.status === 'needDetails') {

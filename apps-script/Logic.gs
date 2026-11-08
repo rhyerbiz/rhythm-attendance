@@ -606,29 +606,27 @@ function testClasses_(scenario, now, cfg) {
       active: true, first: day, last: day,
     };
   };
-  const list = (function () {
-    switch (scenario) {
-      case 'regular': return [mk(1, 'Adult Hip Hop', base + 10, 75)];
-      case 'one': return [mk(1, 'Dance 101', base + 10, 60)];
-      case 'two': return [mk(1, 'Company Practice', base + 10, 60, 0), mk(2, 'Dance 101', base + 20, 60)];
-      case 'series': return [mk(1, 'Company Practice', base + 10, 120, 0), mk(2, 'Adult Hip Hop', base + 130, 75)];
-      case 'early': return [mk(1, 'Adult Hip Hop', base + 120, 75)];
-      case 'late': return [mk(1, 'Dance 101', base - 100, 60)];
-      case 'free': return [mk(1, 'Company Practice', base + 5, 60, 0)];
-      case 'none': return [mk(1, 'Adult Hip Hop', 19 * 60 + 15, 75, null, addDays_(now.date, 1))];
-      default: return [];
-    }
-  })();
-  // Near midnight (or just after it), slide today's classes together so they stay
-  // within the day and keep their spacing, instead of piling up at 11pm or midnight.
-  const today = list.filter(function (c) { return c.first === now.date; });
-  if (today.length) {
-    const lo = Math.min.apply(null, today.map(function (c) { return c.start; }));
-    const hi = Math.max.apply(null, today.map(function (c) { return c.start; }));
-    const shift = hi > 23 * 60 ? 23 * 60 - hi : (lo < 0 ? -lo : 0);
-    today.forEach(function (c) { c.start = Math.max(0, Math.min(c.start + shift, 23 * 60)); });
+  switch (scenario) {
+    case 'regular': return [mk(1, 'Adult Hip Hop', base + 10, 75)];
+    case 'one': return [mk(1, 'Dance 101', base + 10, 60)];
+    case 'two': return [mk(1, 'Company Practice', base + 10, 60, 0), mk(2, 'Dance 101', base + 20, 60)];
+    case 'series': return [mk(1, 'Company Practice', base + 10, 120, 0), mk(2, 'Adult Hip Hop', base + 130, 75)];
+    case 'early': return [mk(1, 'Adult Hip Hop', base + 120, 75)];
+    case 'late': return [mk(1, 'Dance 101', base - 100, 60)];
+    case 'free': return [mk(1, 'Company Practice', base + 5, 60, 0)];
+    case 'none': return [mk(1, 'Adult Hip Hop', 19 * 60 + 15, 75, null, addDays_(now.date, 1))];
+    default: return [];
   }
-  return list;
+}
+
+/**
+ * The clock a test link runs on. The scenarios need from 100 minutes before the tap ("late")
+ * to 130 after it (the second class in "series") inside the same day, so late at night it
+ * stops at 8:50pm and just after midnight it waits at 2am. Only the class times shown move;
+ * the check-in is still recorded at the real time (now.stamp) on the real day.
+ */
+function testClock_(now) {
+  return Object.assign({}, now, { minutes: Math.max(120, Math.min(now.minutes, 20 * 60 + 50)) });
 }
 
 /**
@@ -845,7 +843,13 @@ function checkin_(book, cfg, req, now, io, opts) {
     hasPasskey: !!str_(student.Passkey),
     // Offer to save one only to a returning student without one: a first visit has enough on it.
     passkeyOffer: !str_(student.Passkey) && liveLog_(book).some(function (l) { return str_(l.StudentID) === str_(student.StudentID); }) };
-  // A test link (dev only) swaps the real schedule for its scenario's pretend classes.
+  // A test link (dev only) swaps the real schedule for its scenario's pretend classes, on a
+  // pretend clock late at night, so every scenario still fits in the day (see testClock_).
+  if (from.scenario) {
+    const real = now.minutes;
+    now = testClock_(now);
+    if (now.minutes !== real) base.testClock = fmtTime_(now.minutes); // the page says so
+  }
   const classes = from.scenario ? testClasses_(from.scenario, now, cfg) : classesFrom_(book, cfg);
   const avail = opts.anyTimeToday
     ? allClassesToday_(book, now.date).map(function (c) { return { klass: c, open: true }; })

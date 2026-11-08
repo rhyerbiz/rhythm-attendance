@@ -836,16 +836,25 @@ test('the "regular" test link shows the usual case: covered by a monthly plan, n
   assert.strictEqual(checkin(book, at('2026-11-03', '10:03'), { code: { t: 'testonecodex' } }).account.due, 20);
 });
 
-test('late at night, test classes slide earlier together instead of piling up at 11pm', () => {
-  const cfg = fn('configFrom_')([{ Key: 'dropInPrice', Value: '20' }]);
-  const now = { date: '2026-11-07', minutes: 22 * 60 + 51 };
-  const starts = (s) => JSON.parse(JSON.stringify(fn('testClasses_')(s, now, cfg))).map((c) => c.start);
-  same(starts('two'), [22 * 60 + 50, 23 * 60]);
-  same(starts('series'), [21 * 60, 23 * 60]);
-  same(starts('none'), [19 * 60 + 15]); // tomorrow's class isn't moved
-  const early = { date: '2026-11-07', minutes: 30 };
-  same(JSON.parse(JSON.stringify(fn('testClasses_')('late', early, cfg))).map((c) => c.start), [0]);
-  assert.strictEqual(fn('testClasses_')('two', early, cfg)[1].start - fn('testClasses_')('two', early, cfg)[0].start, 10);
+test('late at night and just after midnight, every test link still shows its situation', () => {
+  const tags = ['two', 'early', 'late', 'series'].map((s) => ({ Code: 'test' + s + 'codex'.slice(0, 8 - s.length), Name: 'Test: ' + s, Active: 'yes', Scenario: s }));
+  const run = (s, hhmm) => {
+    const book = makeBook({ tags, config: [{ Key: 'dropInPrice', Value: '20' }, { Key: 'testScenarios', Value: 'yes' }] });
+    const code = tags.find((t) => t.Scenario === s).Code;
+    return { book, res: checkin(book, at('2026-11-07', hhmm), { code: { t: code } }) };
+  };
+  for (const hhmm of ['22:51', '23:55', '00:20']) {
+    const two = run('two', hhmm).res;
+    assert.strictEqual(two.status, 'choose', 'two at ' + hhmm);
+    assert.notStrictEqual(two.options[0].time, two.options[1].time);
+    const early = run('early', hhmm).res;
+    assert.strictEqual(early.status, 'noClass', 'early at ' + hhmm);
+    assert.strictEqual(early.testClock, hhmm === '00:20' ? '2:00am' : '8:50pm'); // the page says so
+    const late = run('late', hhmm);
+    assert.strictEqual(late.res.status, 'ok', 'late at ' + hhmm);
+    assert.strictEqual(late.book.log[0].ClassDate, '2026-11-07'); // the real day
+    assert.strictEqual(run('series', hhmm).res.status, 'ok', 'series at ' + hhmm);
+  }
 });
 
 test('test links do nothing unless testScenarios is yes; the real sign still works', () => {
