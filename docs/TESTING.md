@@ -46,36 +46,58 @@ check that Venmo opens with the right amount, then back out without paying.
 
 Instead of the sign, you'll use the links below. Each one pretends a different situation is
 happening right now (a class about to start, two at once, and so on), so you can try them all from
-home, any time. Open them on your phone, one at a time, in this order. The first one asks for
-your email and name; after that your phone remembers you.
+home, any time. Open them on your phone, one at a time, in this order.
 
 **Start over any time:** the **Start over** link clears only your own test check-ins and makes
-your phone forget you, so you can run through everything again (the next link asks for your
-email).
+your phone forget you, so you can run through everything again.
 
-Tap each one in order. The first shows the usual case, a regular on a monthly plan. **The rest
-treat you as a drop-in student** (no monthly plan or class pass), so you'll see what you'd owe
-each time.
+*(Paste the links from the Test links tab into the parts below: what happens, what to try, and
+the link.)*
 
-*(Paste the links from the Test links tab here: what happens, what to try, and the link. Put the
-Start over link right under the paragraph above.)*
+### Part 1: your first visit
+
+*Imitates a new student's first day.* Tap link 1. It asks for your email and your name, once.
+It shows the usual case, a regular on a monthly plan: covered, nothing to pay.
+
+### Part 2: coming back
+
+*Imitates a regular on later visits.* Your phone remembers you now, so there's nothing to type.
+If any of these asks for your email, tell me. **These treat you as a drop-in student** (no
+monthly plan or class pass), so you'll see what you'd owe each time.
+
+On the first of these it may offer **Save a passkey**: please try it (Face ID or fingerprint).
+You'll use it in Part 3.
+
+*(Links 2–8.)*
+
+### Part 3: when a phone forgets you
+
+*Imitates a phone that has forgotten a student (iPhones can, after a week without a visit).*
+
+1. Tap **Start over**, then any test link. It should ask only for your email, not your name:
+   the studio already knows you.
+2. Tap **Start over** again, then a test link. This time tap the email box and pick your passkey
+   from the suggestions above the keyboard (older phones show a **Check in with a passkey**
+   button instead). It should check you in without typing anything.
+
+### Part 4 (optional): brand new again
+
+To see the first-visit screen again, tap **Start over** and use a different email, like
+`yourname+test2@gmail.com`.
+
+### Also worth trying
+
+- Tap a link **twice**: the second time should say you're already checked in.
+- On a drop-in test, tap **Yes, I paid** instead of **Not yet**: it should say "Sent by Venmo"
+  with the right amount. Then open a different link: it should ask only for that new class, not
+  the earlier one you didn't pay for.
+- Try **Not you? Switch person** at the bottom: it should ask only for your email.
+- If the group chat button shows, tap it, or tap **Already in the group? Hide this**: either way
+  it shouldn't come back after that.
 
 ### Things to look out for as you go
 
-- **Does each screen make sense for the situation the link describes?** That's the main thing.
-- Tap a link **twice**: the second time should say you're already checked in.
-- Tap the **Venmo** button once and back out: does Venmo open with the amount filled in? Back on
-  the page, tap **Not yet**.
-- On another test, tap **Yes, I paid** instead: it should say "Sent by Venmo" with the right
-  amount. Then open a different link: it should ask only for that new class, not the earlier one
-  you didn't pay for.
-- Try **Not you? Switch person** at the bottom: it should ask only for your email.
-- From your second check-in it may offer **Save a passkey**: try it (Face ID or fingerprint).
-  Then tap **Not you? Switch person**, tap the email box, and pick your passkey from the
-  suggestions above the keyboard (older phones show a **Check in with a passkey** button
-  instead). It should check you in without your email.
-- If the group chat button shows, tap it, or tap **Already in the group? Hide this**: either way
-  it shouldn't come back after that.
+- **Does each screen make sense for the situation it imitates?** That's the main thing.
 - Anything confusing or worded strangely, even if it worked.
 - Anything slow: roughly how long you waited.
 - Anything that looked broken: text cut off, buttons hard to tap, odd colours in dark mode.
