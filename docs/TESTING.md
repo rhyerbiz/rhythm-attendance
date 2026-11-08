@@ -58,6 +58,13 @@ your phone forget you, so you can run through everything again.
 *(Paste the links from the Test links tab into the parts below: what happens, what to try, and
 the link.)*
 
+### Things to look out for as you go
+
+- **Does each screen make sense for the situation it imitates?** That's the main thing.
+- Anything confusing or worded strangely, even if it worked.
+- Anything slow: roughly how long you waited.
+- Anything that looked broken: text cut off, buttons hard to tap, odd colours in dark mode.
+
 ### Part 1: your first visit
 
 *Imitates a new student's first day.* Tap link 1. It asks for your email and your name, once.
@@ -98,13 +105,6 @@ To see the first-visit screen again, tap **Start over** and use a different emai
 - Try **Not you? Switch person** at the bottom: it should ask only for your email.
 - If the group chat button shows, tap it, or tap **Already in the group? Hide this**: either way
   it shouldn't come back after that.
-
-### Things to look out for as you go
-
-- **Does each screen make sense for the situation it imitates?** That's the main thing.
-- Anything confusing or worded strangely, even if it worked.
-- Anything slow: roughly how long you waited.
-- Anything that looked broken: text cut off, buttons hard to tap, odd colours in dark mode.
 
 ### Reporting a problem
 
