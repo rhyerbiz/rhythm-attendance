@@ -602,21 +602,33 @@ function testClasses_(scenario, now, cfg) {
     day = day || now.date;
     return {
       id: 'T-' + scenario + '-' + n, name: name + ' (test)', days: [dowOf_(day)],
-      start: Math.max(0, Math.min(start, 23 * 60)), minutes: minutes, price: price == null ? cfg.dropInPrice : price,
+      start: start, minutes: minutes, price: price == null ? cfg.dropInPrice : price,
       active: true, first: day, last: day,
     };
   };
-  switch (scenario) {
-    case 'regular': return [mk(1, 'Adult Hip Hop', base + 10, 75)];
-    case 'one': return [mk(1, 'Dance 101', base + 10, 60)];
-    case 'two': return [mk(1, 'Company Practice', base + 10, 60, 0), mk(2, 'Dance 101', base + 20, 60)];
-    case 'series': return [mk(1, 'Company Practice', base + 10, 120, 0), mk(2, 'Adult Hip Hop', base + 130, 75)];
-    case 'early': return [mk(1, 'Adult Hip Hop', base + 120, 75)];
-    case 'late': return [mk(1, 'Dance 101', base - 100, 60)];
-    case 'free': return [mk(1, 'Company Practice', base + 5, 60, 0)];
-    case 'none': return [mk(1, 'Adult Hip Hop', 19 * 60 + 15, 75, null, addDays_(now.date, 1))];
-    default: return [];
+  const list = (function () {
+    switch (scenario) {
+      case 'regular': return [mk(1, 'Adult Hip Hop', base + 10, 75)];
+      case 'one': return [mk(1, 'Dance 101', base + 10, 60)];
+      case 'two': return [mk(1, 'Company Practice', base + 10, 60, 0), mk(2, 'Dance 101', base + 20, 60)];
+      case 'series': return [mk(1, 'Company Practice', base + 10, 120, 0), mk(2, 'Adult Hip Hop', base + 130, 75)];
+      case 'early': return [mk(1, 'Adult Hip Hop', base + 120, 75)];
+      case 'late': return [mk(1, 'Dance 101', base - 100, 60)];
+      case 'free': return [mk(1, 'Company Practice', base + 5, 60, 0)];
+      case 'none': return [mk(1, 'Adult Hip Hop', 19 * 60 + 15, 75, null, addDays_(now.date, 1))];
+      default: return [];
+    }
+  })();
+  // Near midnight (or just after it), slide today's classes together so they stay
+  // within the day and keep their spacing, instead of piling up at 11pm or midnight.
+  const today = list.filter(function (c) { return c.first === now.date; });
+  if (today.length) {
+    const lo = Math.min.apply(null, today.map(function (c) { return c.start; }));
+    const hi = Math.max.apply(null, today.map(function (c) { return c.start; }));
+    const shift = hi > 23 * 60 ? 23 * 60 - hi : (lo < 0 ? -lo : 0);
+    today.forEach(function (c) { c.start = Math.max(0, Math.min(c.start + shift, 23 * 60)); });
   }
+  return list;
 }
 
 /**

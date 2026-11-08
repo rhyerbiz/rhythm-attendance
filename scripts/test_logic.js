@@ -836,6 +836,18 @@ test('the "regular" test link shows the usual case: covered by a monthly plan, n
   assert.strictEqual(checkin(book, at('2026-11-03', '10:03'), { code: { t: 'testonecodex' } }).account.due, 20);
 });
 
+test('late at night, test classes slide earlier together instead of piling up at 11pm', () => {
+  const cfg = fn('configFrom_')([{ Key: 'dropInPrice', Value: '20' }]);
+  const now = { date: '2026-11-07', minutes: 22 * 60 + 51 };
+  const starts = (s) => JSON.parse(JSON.stringify(fn('testClasses_')(s, now, cfg))).map((c) => c.start);
+  same(starts('two'), [22 * 60 + 50, 23 * 60]);
+  same(starts('series'), [21 * 60, 23 * 60]);
+  same(starts('none'), [19 * 60 + 15]); // tomorrow's class isn't moved
+  const early = { date: '2026-11-07', minutes: 30 };
+  same(JSON.parse(JSON.stringify(fn('testClasses_')('late', early, cfg))).map((c) => c.start), [0]);
+  assert.strictEqual(fn('testClasses_')('two', early, cfg)[1].start - fn('testClasses_')('two', early, cfg)[0].start, 10);
+});
+
 test('test links do nothing unless testScenarios is yes; the real sign still works', () => {
   const book = testBook(false);
   assert.strictEqual(checkin(book, at(MON, '18:55'), { code: { t: 'testonecodex' } }).status, 'needTag');
