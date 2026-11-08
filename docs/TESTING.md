@@ -10,9 +10,11 @@ Nothing a tester does reaches the studio's accounts.
 
 1. Dev works end to end for you on your own phone (SETUP steps 1–5).
 2. In the dev Sheet's **Config**:
-   - `venmoHandle`: **your own** Venmo username, so a test payment could only ever reach you.
-     Testers are asked not to send one, but a slip then costs nothing.
-   - `chatLink`: blank, or a throwaway Telegram group, so the Join button can be tried.
+   - `venmoHandle`: the studio's (what students expect to see), or your own so a slip could only
+     reach you. Testers are asked not to send a payment either way. With real students as
+     testers, the studio's handle is less confusing than a stranger's.
+   - `chatLink`: the real group is fine if the testers are already in it; otherwise blank, or a
+     throwaway Telegram group.
    - `pageUrl`: your page's address (`https://<you>.github.io/rhythm-attendance/`).
    - `testScenarios`: **yes**. This is what makes test links work. Never set it in the studio's copy.
 3. Choose **Check-in → Make test links for testers (dev copy)**. It fills a **Test links** tab
