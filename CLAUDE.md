@@ -136,7 +136,10 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     (`static`/`direct`/`unverified`, as before). Codes live only in the Sheet, never the repo.
 11g. **Test links (dev only):** a Tags row with a `Scenario` (`TEST_SCENARIOS` in Logic.gs) makes
     `checkin_` use `testClasses_` (pretend classes around now; ClassIDs `T-…`, names "(test)")
-    instead of the schedule. The `reset` scenario voids only that email's test rows and today's
+    instead of the schedule. Opening a test link starts its situation fresh (`freshTestLink_`:
+    voids that tester's earlier check-ins on that link only), and late at night they run on a
+    pretend clock (`testClock_`: 8:50pm–2am) so every scenario fits in the day. Nothing
+    test-specific is ever shown on the page (testers are non-technical). The `reset` scenario voids only that email's test rows and today's
     declared payments (`resetTester_`, via `io.update`). All of it only works while Config
     `testScenarios` is yes; never set it in prod. Menu "Make test links for testers" fills a
     "Test links" tab. docs/TESTING.md is built around them.

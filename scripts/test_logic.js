@@ -849,12 +849,50 @@ test('late at night and just after midnight, every test link still shows its sit
     assert.notStrictEqual(two.options[0].time, two.options[1].time);
     const early = run('early', hhmm).res;
     assert.strictEqual(early.status, 'noClass', 'early at ' + hhmm);
-    assert.strictEqual(early.testClock, hhmm === '00:20' ? '2:00am' : '8:50pm'); // the page says so
+    assert.strictEqual(early.testClock, undefined); // nothing test-specific on the page
     const late = run('late', hhmm);
     assert.strictEqual(late.res.status, 'ok', 'late at ' + hhmm);
     assert.strictEqual(late.book.log[0].ClassDate, '2026-11-07'); // the real day
     assert.strictEqual(run('series', hhmm).res.status, 'ok', 'series at ' + hhmm);
   }
+});
+
+test('opening a test link starts its situation fresh, for that tester and that link only', () => {
+  const tags = [
+    { Code: 'realsigncode', Name: 'Front door', Active: 'yes' },
+    { Code: 'testearlycod', Name: 'Test: early', Active: 'yes', Scenario: 'early' },
+    { Code: 'testtwocodex', Name: 'Test: two', Active: 'yes', Scenario: 'two' },
+    { Code: 'testnonecode', Name: 'Test: none', Active: 'yes', Scenario: 'none' },
+  ];
+  const book = makeBook({ tags, config: [{ Key: 'dropInPrice', Value: '20' }, { Key: 'testScenarios', Value: 'yes' }, { Key: 'venmoHandle', Value: 'studio' }] });
+  const io = updIo();
+  const go = (t, extra, email) => fn('handleRequest_')(book, Object.assign({ action: 'checkin', email: email || 'jess@example.com', name: email ? 'Sam' : 'jess', code: { t } }, extra || {}), at('2026-11-07', '14:00'), io);
+  // Check in early, then open the early link again: it's "You're early" again, not "all set".
+  const first = go('testearlycod');
+  assert.strictEqual(first.status, 'noClass');
+  assert.strictEqual(go('testearlycod', { classIds: [first.later[0].id] }).status, 'ok');
+  const again = go('testearlycod');
+  assert.strictEqual(again.status, 'noClass');
+  assert.strictEqual(again.next.done, false);
+  // Two at once: picking both, then reopening, asks again; the payment declared for them is voided too.
+  assert.strictEqual(go('testtwocodex').status, 'choose');
+  const both = go('testtwocodex', { classIds: ['T-two-1', 'T-two-2'] });
+  assert.strictEqual(both.status, 'ok');
+  fn('handleRequest_')(book, { action: 'declarePayment', email: 'jess@example.com', amount: 20, checkinIds: both.checkins.map((c) => c.checkinId) }, at('2026-11-07', '14:01'), io);
+  assert.strictEqual(book.payments.filter((p) => p.Status === 'declared').length, 1);
+  assert.strictEqual(go('testtwocodex').status, 'choose');
+  assert.strictEqual(book.payments.filter((p) => p.Status === 'declared').length, 0);
+  // "Here for a class" on the no-class link: reopening lets you do it again.
+  assert.strictEqual(go('testnonecode', { unscheduled: true, note: 'x' }).already, false);
+  go('testnonecode');
+  assert.strictEqual(go('testnonecode', { unscheduled: true, note: 'x' }).already, false);
+  // Never another link's rows, another tester's, or real ones.
+  go('testearlycod', { classIds: ['T-early-1'] }, 'sam@example.com');
+  book.log.push({ CheckinID: 'REAL1', ClassDate: '2026-11-07', StudentID: book.students[0].StudentID, ClassID: 'K1', Class: 'Salsa', Price: 20, Status: 'ok', Source: 'Front door' });
+  go('testearlycod');
+  const live = (pred) => book.log.filter((l) => l.Status !== 'void' && pred(l)).length;
+  assert.strictEqual(live((l) => l.CheckinID === 'REAL1'), 1);
+  assert.strictEqual(live((l) => l.ClassID === 'T-early-1' && l.Student !== 'jess'), 1); // Sam's
 });
 
 test('test links do nothing unless testScenarios is yes; the real sign still works', () => {

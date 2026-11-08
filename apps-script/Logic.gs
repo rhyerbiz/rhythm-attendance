@@ -661,6 +661,34 @@ function resetTester_(book, student, now, io) {
   return cleared;
 }
 
+/**
+ * Opening a test link starts its situation fresh: this tester's earlier check-ins on
+ * this same link (its pretend classes, or its "here for a class" row) are voided, and so
+ * are payments they declared for those check-ins. Never real rows, never anyone else's,
+ * never other links. Only the opening request does this, not picking a class afterwards.
+ */
+function freshTestLink_(book, student, scenario, source, io) {
+  const sid = str_(student.StudentID);
+  const prefix = 'T-' + scenario + '-';
+  const gone = {};
+  (book.log || []).forEach(function (l) {
+    if (str_(l.StudentID) !== sid || str_(l.Status).toLowerCase() === 'void') return;
+    const mine = str_(l.ClassID).indexOf(prefix) === 0 ||
+      (str_(l.Status).toLowerCase() === UNSCHEDULED && str_(l.Source) === source);
+    if (!mine) return;
+    gone[str_(l.CheckinID)] = true;
+    l.Status = 'void';
+    io.update('Log', l, { Status: 'void' });
+  });
+  (book.payments || []).forEach(function (p) {
+    const covers = str_(p.Covers).split(/\s+/).filter(Boolean);
+    if (str_(p.Status).toLowerCase() !== 'declared' || !covers.length) return;
+    if (!covers.every(function (id) { return gone[id]; })) return;
+    p.Status = 'void';
+    io.update('Payments', p, { Status: 'void' });
+  });
+}
+
 // ------------------------------- group chat ---------------------------------
 
 // The full Join card for a student's first few check-ins, then one quiet line.
@@ -846,9 +874,10 @@ function checkin_(book, cfg, req, now, io, opts) {
   // A test link (dev only) swaps the real schedule for its scenario's pretend classes, on a
   // pretend clock late at night, so every scenario still fits in the day (see testClock_).
   if (from.scenario) {
-    const real = now.minutes;
     now = testClock_(now);
-    if (now.minutes !== real) base.testClock = fmtTime_(now.minutes); // the page says so
+    // Opening the link (not picking classes on it afterwards) starts its situation over.
+    const opening = !req.unscheduled && ![].concat(req.classIds || [], req.classId || []).filter(Boolean).length;
+    if (opening) freshTestLink_(book, student, from.scenario, from.source, io);
   }
   const classes = from.scenario ? testClasses_(from.scenario, now, cfg) : classesFrom_(book, cfg);
   const avail = opts.anyTimeToday
