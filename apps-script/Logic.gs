@@ -549,6 +549,8 @@ function accountView_(book, cfg, student, today, checkinIds) {
     due: due,                          // what the page asks for: the unpaid part of these check-ins
     dueLabel: money_(due),
     pending: led.pending,
+    // How each of these check-ins is covered, so the page can say which class costs what.
+    items: mine.map(function (i) { return { id: i.id, covered: i.covered, price: i.price, priceLabel: money_(i.price) }; }),
     these: mine.length ? {
       plan: count('plan'), package: count('package'), free: count('free'), dropin: dropins.length,
       dropinTotal: dropinTotal, dropinLabel: money_(dropinTotal),
@@ -586,7 +588,7 @@ const TEST_SCENARIOS = [
   { id: 'regular', label: 'A regular on a monthly plan (the usual)', try: 'Check in. It should say your monthly plan covers it: nothing to pay.' },
   { id: 'one', label: 'A class is about to start', try: 'Check in. You should be checked straight in, with what you owe for a drop-in.' },
   { id: 'two', label: 'Two classes at the same time', try: 'Pick one or both classes.' },
-  { id: 'series', label: 'Staying for two classes in a row (Company practice, then Hip Hop)', try: 'Check in to the practice, then add Hip Hop from "Taking another class today?"' },
+  { id: 'series', label: 'Staying for two classes in a row (Dance 101, then Hip Hop)', try: 'Check in to Dance 101, then add Hip Hop from "Taking another class today?". Both are drop-ins, so you owe for two.' },
   { id: 'early', label: "You're early (class in 2 hours)", try: 'You can check in now, or not yet.' },
   { id: 'late', label: 'You forgot: class ended 40 minutes ago', try: 'You should still be checked in.' },
   { id: 'free', label: 'A class with nothing extra to pay (a Company practice)', try: 'Check in. Nothing to pay.' },
@@ -610,7 +612,7 @@ function testClasses_(scenario, now, cfg) {
     case 'regular': return [mk(1, 'Adult Hip Hop', base + 10, 75)];
     case 'one': return [mk(1, 'Dance 101', base + 10, 60)];
     case 'two': return [mk(1, 'Company Practice', base + 10, 60, 0), mk(2, 'Dance 101', base + 20, 60)];
-    case 'series': return [mk(1, 'Company Practice', base + 10, 120, 0), mk(2, 'Adult Hip Hop', base + 130, 75)];
+    case 'series': return [mk(1, 'Dance 101', base + 10, 60), mk(2, 'Adult Hip Hop', base + 70, 75)];
     case 'early': return [mk(1, 'Adult Hip Hop', base + 120, 75)];
     case 'late': return [mk(1, 'Dance 101', base - 100, 60)];
     case 'free': return [mk(1, 'Company Practice', base + 5, 60, 0)];
@@ -621,7 +623,7 @@ function testClasses_(scenario, now, cfg) {
 
 /**
  * The clock a test link runs on. The scenarios need from 100 minutes before the tap ("late")
- * to 130 after it (the second class in "series") inside the same day, so late at night it
+ * to 120 after it ("early") inside the same day, so late at night it
  * stops at 8:50pm and just after midnight it waits at 2am. Only the class times shown move;
  * the check-in is still recorded at the real time (now.stamp) on the real day.
  */

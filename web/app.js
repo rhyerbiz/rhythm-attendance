@@ -461,6 +461,15 @@
     return rows.length ? '<div class="acct">' + rows.join('<hr>') + '</div>' : '';
   }
 
+  // With several classes at once, each says how it's covered ("no charge", "$17", "plan"),
+  // so a free class next to a paid one doesn't look like a missing charge.
+  function coveredLabel(res, checkinId) {
+    var items = (res.account && res.account.items) || [];
+    var i = items.filter(function (x) { return x.id === checkinId; })[0];
+    if (!i) return '';
+    return { free: 'no charge', plan: 'plan', package: 'class pass', dropin: i.priceLabel }[i.covered] || '';
+  }
+
   function viewDone(me, res) {
     var already = res.status === 'already';
     var list = res.checkins;
@@ -472,7 +481,9 @@
         (list.length === 1
           ? '<p class="klass">' + esc(list[0].name) + '</p><p class="muted">' + esc(list[0].dayLabel) + ' · ' + esc(list[0].time) + '</p>'
           : '<ul class="klasses">' + list.map(function (c) {
-              return '<li><span class="klass">' + esc(c.name) + '</span><span class="muted">' + esc(c.time) + '</span></li>';
+              var how = coveredLabel(res, c.checkinId);
+              return '<li><span class="klass">' + esc(c.name) + '</span><span class="muted">' + esc(c.time) +
+                (how ? ' · ' + esc(how) : '') + '</span></li>';
             }).join('') + '</ul>') +
         accountHtml(res) +
       '</div>' +

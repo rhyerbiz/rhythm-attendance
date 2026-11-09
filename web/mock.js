@@ -29,8 +29,8 @@ window.MockBackend = (function () {
       rows.push({ ClassID: 'K1', Class: 'Dance 101', Days: today, Start: hhmm(base + 25), Minutes: 60 });
     }
     if (scenario === 'series') {
-      rows.push({ ClassID: 'K3', Class: 'Company Practice', Days: today, Start: hhmm(base + 10), Minutes: 120, Price: 0 });
-      rows.push({ ClassID: 'K5', Class: 'Adult Hip Hop', Days: today, Start: hhmm(base + 130), Minutes: 75 });
+      rows.push({ ClassID: 'K1', Class: 'Dance 101', Days: today, Start: hhmm(base + 10), Minutes: 60 });
+      rows.push({ ClassID: 'K5', Class: 'Adult Hip Hop', Days: today, Start: hhmm(base + 70), Minutes: 75 });
     }
     // Ended 40 minutes ago: someone who forgot, checking in on the way out.
     if (scenario === 'late') rows.push({ ClassID: 'K1', Class: 'Dance 101', Days: today, Start: hhmm(base - 100), Minutes: 60 });

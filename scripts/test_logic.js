@@ -146,6 +146,9 @@ test('a series with one credit left: the package covers one, the other is a drop
   assert.strictEqual(res.account.creditsLeft, 0);
   assert.strictEqual(res.account.owed, 20);
   assert.ok(decodeURIComponent(res.account.pay.url).includes('Bachata 2 Mon Nov 2'));
+  // Each check-in says how it was covered, so the page can label the classes one by one.
+  const how = res.checkins.map((c) => res.account.items.filter((i) => i.id === c.checkinId)[0]);
+  same(how.map((i) => [i.covered, i.priceLabel]), [['package', '$0'], ['dropin', '$20']]);
 });
 
 test('before any class opens, later classes today can be checked in to early', () => {
@@ -820,6 +823,18 @@ test('a test link pretends its classes are on, at any hour, with real check-ins 
   const none = checkin(book, at('2026-11-03', '10:02'), { code: { t: 'testnonecode' } });
   assert.strictEqual(none.status, 'noClass');
   assert.strictEqual(none.next.day, '2026-11-04');
+});
+
+test('test links: "two" mixes a free class with a drop-in, "series" is two drop-ins', () => {
+  const book = makeBook({ tags: TEST_TAGS.concat([{ Code: 'testseriesxx', Name: 'Test: series', Active: 'yes', Scenario: 'series' }]),
+    config: [{ Key: 'dropInPrice', Value: '20' }, { Key: 'testScenarios', Value: 'yes' }, { Key: 'venmoHandle', Value: 'studio' }] });
+  const two = checkin(book, at('2026-11-03', '10:02'), { code: { t: 'testtwocodex' }, classIds: ['T-two-1', 'T-two-2'] });
+  same(two.checkins.map((c) => two.account.items.filter((i) => i.id === c.checkinId)[0].covered), ['free', 'dropin']);
+  assert.strictEqual(two.account.due, 20);
+  const series = checkin(book, at('2026-11-03', '10:02'), { code: { t: 'testseriesxx' }, classIds: ['T-series-1', 'T-series-2'] });
+  same(series.checkins.map((c) => c.name), ['Dance 101 (test)', 'Adult Hip Hop (test)']);
+  assert.strictEqual(series.account.these.dropin, 2);
+  assert.strictEqual(series.account.due, 40);
 });
 
 test('the "regular" test link shows the usual case: covered by a monthly plan, nothing to pay', () => {
