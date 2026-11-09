@@ -165,6 +165,9 @@ input:focus { outline: none; border-color: var(--teal); }
 .klasses li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .klasses li:last-child { border-bottom: 0; }
 .klasses .klass { margin: 0; }
+/* Time, with how it's covered under it ("no charge", "$17"): each on one line, never split. */
+.klasses .when { flex: none; text-align: right; white-space: nowrap; }
+.klasses .how { display: block; font-size: 14px; }
 
 .picks { margin-top: 12px; }
 .pick {

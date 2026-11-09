@@ -482,8 +482,8 @@
           ? '<p class="klass">' + esc(list[0].name) + '</p><p class="muted">' + esc(list[0].dayLabel) + ' · ' + esc(list[0].time) + '</p>'
           : '<ul class="klasses">' + list.map(function (c) {
               var how = coveredLabel(res, c.checkinId);
-              return '<li><span class="klass">' + esc(c.name) + '</span><span class="muted">' + esc(c.time) +
-                (how ? ' · ' + esc(how) : '') + '</span></li>';
+              return '<li><span class="klass">' + esc(c.name) + '</span><span class="when muted">' + esc(c.time) +
+                (how ? '<span class="how">' + esc(how) + '</span>' : '') + '</span></li>';
             }).join('') + '</ul>') +
         accountHtml(res) +
       '</div>' +
