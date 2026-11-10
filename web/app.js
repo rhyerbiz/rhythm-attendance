@@ -415,7 +415,8 @@
       '<div class="card center">' +
         CHECK +
         '<h1>' + (res.already ? 'Already noted' : 'Thanks, ' + esc(firstName(res.student.name)) + '!') + '</h1>' +
-        '<p class="muted">The studio knows you\'re here and will match it to your class.</p>' +
+        '<p>' + (res.note ? 'You\'re noted as here for <b>' + esc(res.note) + '</b>.' : 'You\'re noted as here today.') + '</p>' +
+        '<p class="small muted">It isn\'t on today\'s schedule, so the studio will check which class it was and add it to your record.</p>' +
       '</div>' +
       chatHtml(res) +
       notYou()

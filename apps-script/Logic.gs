@@ -895,7 +895,8 @@ function checkin_(book, cfg, req, now, io, opts) {
     const mine = unscheduledLog_(book).filter(function (l) {
       return str_(l.StudentID) === sid && dayStr_(l.ClassDate) === now.date;
     })[0];
-    if (mine) return Object.assign(base, { status: 'unscheduled', checkinId: str_(mine.CheckinID), already: true });
+    // The class they typed comes back, so the page can say what was noted (their own words).
+    if (mine) return Object.assign(base, { status: 'unscheduled', checkinId: str_(mine.CheckinID), already: true, note: str_(mine.Note) });
     const row = {
       CheckinID: io.newId('C'), When: now.stamp, ClassDate: now.date,
       StudentID: sid, Student: str_(student.Name), ClassID: '', Class: '',
@@ -903,7 +904,7 @@ function checkin_(book, cfg, req, now, io, opts) {
     };
     book.log.push(row);
     io.append('Log', row);
-    return Object.assign(base, { status: 'unscheduled', checkinId: row.CheckinID, already: false });
+    return Object.assign(base, { status: 'unscheduled', checkinId: row.CheckinID, already: false, note: note });
   }
   const doneRow = function (c) {
     return liveLog_(book).filter(function (l) {

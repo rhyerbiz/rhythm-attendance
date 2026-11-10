@@ -556,6 +556,9 @@ test('"here for a class" records an unscheduled row, charges nothing, and a retr
   const again = fn('handleRequest_')(book, { action: 'checkin', email: 'jess@example.com', unscheduled: true, code: { t: 'static' } }, now, makeIo());
   assert.strictEqual(again.already, true);
   assert.strictEqual(again.checkinId, res.checkinId);
+  // The page repeats what was noted, both times.
+  assert.strictEqual(res.note, 'Tango makeup');
+  assert.strictEqual(again.note, 'Tango makeup');
   // Not a visit and not owed until the owner sorts it out.
   const led = fn('ledgerFor_')(book, fn('configFrom_')(book.config), 'S1', now.date);
   assert.strictEqual(led.owed, 0);
