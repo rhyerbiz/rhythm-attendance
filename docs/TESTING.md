@@ -50,7 +50,9 @@ check that Venmo opens with the right amount, then back out without paying.
 
 Instead of the sign, you'll use the links below. Each one pretends a different situation is
 happening right now (a class about to start, two at once, and so on), so you can try them all from
-home, any time. Open them on your phone, one at a time, in this order. Each link starts fresh
+home, any time. Open them on your phone, one at a time, in this order. If a link opens inside
+Messenger or another app, tap its menu (⋯ or ⋮) and choose to open it in your browser (Chrome or
+Safari): the page can't remember you or offer a passkey inside an app. Each link starts fresh
 every time you open it, so you can repeat any of them. (Late in the evening, the class times
 shown may be earlier than your clock. That's expected.)
 
@@ -101,7 +103,8 @@ To see the first-visit screen again, tap **Start over** and use a different emai
 
 ### Also worth trying
 
-- On a drop-in test, tap **Yes, I paid** instead of **Not yet**: it should say "Sent by Venmo"
+- On a drop-in test, tap the Venmo button, back out of Venmo without paying, then tap
+  **Yes, I paid** instead of **Not yet**: it should say "Sent by Venmo"
   with the right amount. Then open a different link: it should ask only for that new class, not
   the earlier one you didn't pay for.
 - Try **Not you? Switch person** at the bottom: it should ask only for your email.
