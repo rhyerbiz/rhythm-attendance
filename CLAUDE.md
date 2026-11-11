@@ -99,7 +99,10 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
    automatic retries safe. `declarePayment` is *not* retried by the client (a lost response would
    record the payment twice).
 9. **One script lock around read → decide → write** in `doPost`, so a double tap can't create two
-   rows.
+   rows. Only the owner page's reads (`today`, `students`) skip it, so they never queue behind
+   check-ins. **Students must never wait for anything else:** a check-in is one request (the page
+   pings ahead while a new student types), and nothing that can run later runs inside it.
+   A request with `timing: true` gets an `ms` breakdown back (lock, read, handle, flush).
 10. A student's self-declared Venmo payment counts immediately (`declared`); the owner confirms or
     rejects it.
 11. **Which class** (`todaysClasses_`, `checkin_`): a class is open from `opensMinutesBefore` its
@@ -120,8 +123,10 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
 11c. **Owner check-in** (`ownerCheckin_`, menu "Check someone in…"): same rules, but any class
     today at any time, `Source = owner`. Only Code.gs calls it; the web API passes `{}` options,
     so a request can't ask for it.
-11d. **Today tab** (`todayRows_`): rewritten from the in-memory book after every check-in that
-    wrote a row (in `doPost`, inside the lock), on Refresh dashboard, and hourly by the Wix sync.
+11d. **Today tab** (`todayRows_`): after a request that wrote a row, the answer carries
+    `todayTab: true` and the page then sends `action: 'todayTab'` (keepalive, no lock), which
+    rewrites it from a fresh read, so the student isn't kept waiting for it (~0.5 s). Also on
+    Refresh dashboard and hourly by the Wix sync.
     It's the owner's view in the Sheets phone app, which has no custom menus.
 11e. **The API is open to anyone with the URL** (the repo is public too), so it never relies on
     secrecy. Text from students or Wix goes into the Sheet through `textSafe_` (a leading `'`

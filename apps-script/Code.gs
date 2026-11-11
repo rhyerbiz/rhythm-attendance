@@ -40,25 +40,47 @@ function doPost(e) {
   // The page pings while a new student types their email, so Google has the script warmed up by
   // the time they tap Check in. Answered without the lock or the Sheet.
   if (req && req.action === 'ping') return json_({ ok: true, version: APP_VERSION });
+  // `timing: true` in a request adds where the time went (ms) to the answer; numbers only.
+  const t = [Date.now()];
+  const mark = function (label) { t.push(label, Date.now()); };
+  // The Today tab, rewritten after a check-in by a follow-up request from the page, so the
+  // student never waits for it (see writeToday_). No lock: it only writes Today, from a fresh read.
+  if (req && req.action === 'todayTab') {
+    try { writeToday_(readBook_(), nowParts_()); } catch (err) { console.warn('Today tab not updated: ' + err); }
+    return json_({ ok: true });
+  }
+  // Only reads (the owner page's lists) skip the lock, so they never queue behind check-ins.
+  const readOnly = req && req.action === 'owner' && (req.op === 'today' || req.op === 'students');
   // One lock around read → decide → write, so a double tap cannot slip a
   // second check-in in between the duplicate check and the append.
-  const lock = LockService.getScriptLock();
+  const lock = readOnly ? null : LockService.getScriptLock();
   try {
-    lock.waitLock(15000);
+    if (lock) lock.waitLock(15000);
+    mark('lock');
+    ss_();
+    mark('open');
     const book = readBook_();
+    mark('read');
     const now = nowParts_();
-    const res = handleRequest_(book, req, now, sheetIo_(book));
-    // A new row was written: bring the Today tab up to date from what's already in memory.
+    const io = sheetIo_(book);
+    const res = handleRequest_(book, req, now, io);
+    mark('handle');
+    // A new row was written: the page then asks for the Today tab to be rewritten (action
+    // 'todayTab'), after it has shown the student their answer.
     const wrote = res.wrote || (res.ok && (res.status === 'ok' || res.status === 'reset' || (res.status === 'unscheduled' && !res.already)));
-    if (wrote) {
-      try { writeToday_(book, now); } catch (err) { console.warn('Today tab not updated: ' + err); }
+    if (wrote) res.todayTab = true;
+    if (io.wroteAny) SpreadsheetApp.flush(); // the writes land before the next request gets the lock
+    mark('flush');
+    if (req.timing) {
+      res.ms = {};
+      for (let i = 1; i < t.length; i += 2) res.ms[t[i]] = t[i + 1] - t[i - 1];
     }
     return json_(res);
   } catch (err) {
     console.error(err && err.stack || err);
     return json_({ ok: false, error: 'Something went wrong on the studio side. Please try again.' });
   } finally {
-    try { lock.releaseLock(); } catch (e2) { /* never held */ }
+    if (lock) try { lock.releaseLock(); } catch (e2) { /* never held */ }
   }
 }
 
@@ -227,8 +249,10 @@ function sheetIo_(book) {
       return true;
     },
     // Changes cells of a row that was read from the Sheet (a tester's reset voids rows this way).
+    wroteAny: false,
     update: function (tab, row, fields) {
       if (!row._row) return;
+      this.wroteAny = true;
       const sh = ss.getSheetByName(tab);
       Object.keys(fields).forEach(function (h) {
         let col = book.headers[tab].indexOf(h) + 1;
@@ -237,6 +261,7 @@ function sheetIo_(book) {
       });
     },
     append: function (tab, row) {
+      this.wroteAny = true;
       const headers = book.headers[tab];
       const sh = ss.getSheetByName(tab);
       // A column the tab doesn't have yet (Log's By, on a Sheet from before it existed) is added first.

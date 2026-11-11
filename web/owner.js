@@ -45,6 +45,13 @@
     }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
+    }).then(function (res) {
+      // A row was written: the Sheet's Today tab is rewritten by a separate request (app.js does the same).
+      if (res && res.todayTab) {
+        fetch(ENV.apiUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'todayTab' }), keepalive: true }).catch(function () { /* the hourly sync catches up */ });
+      }
+      return res;
     });
   }
 
@@ -56,7 +63,7 @@
   }
   function on(sel, ev, fn) { var el = app.querySelector(sel); if (el) el.addEventListener(ev, fn); }
   function all(sel) { return Array.prototype.slice.call(app.querySelectorAll(sel)); }
-  function render(html) { app.innerHTML = html; window.scrollTo(0, 0); }
+  function render(html) { state.top = false; app.innerHTML = html; window.scrollTo(0, 0); }
   function busy() { render('<div class="card center"><div class="spinner" aria-hidden="true"></div></div>'); }
   function setStudio(name) {
     if (!name) return;
@@ -67,7 +74,7 @@
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
 
   // ---------------------------------------------------------------- state
-  var state = { tab: 'today', today: null, students: null, filter: '' };
+  var state = { tab: 'today', today: null, students: null, filter: '', top: false };
 
   function setTab(tab) {
     state.tab = tab;
@@ -84,18 +91,52 @@
     c.hidden = !n;
   }
 
-  // Loads (or reloads) what a tab needs, then shows it.
+  // Shows a tab: at once from what's already loaded, then refreshed from the server. The
+  // refresh is redrawn only if she's still on that tab's main view and isn't typing.
   function show(tab, msg, bad) {
     setTab(tab);
     var need = tab === 'students' ? 'students' : 'today';
-    busy();
-    api(need).then(function (res) {
+    var had = !!state[need];
+    if (had) draw(msg, bad); else busy();
+    var load = need === 'students' ? loadStudents(true) : api('today');
+    load.then(function (res) {
+      if (had) {
+        if (!res || !res.ok) return; // keep what's on screen
+        state[need] = res;
+        if (need === 'today') setExtrasCount();
+        if (state.tab === tab && state.top && !typing()) {
+          var y = window.scrollY;
+          draw(msg, bad);
+          window.scrollTo(0, y);
+        }
+        return;
+      }
       if (!handled(res)) return;
       state[need] = res;
-      if (need === 'today') setExtrasCount();
+      if (need === 'today') { setExtrasCount(); loadStudents(); } // ready for Take attendance
       draw(msg, bad);
-    }).catch(function () { viewError('Couldn\'t reach the studio\'s records. Check your signal and try again.', function () { show(tab, msg, bad); }); });
+    }).catch(function () {
+      if (!had) viewError('Couldn\'t reach the studio\'s records. Check your signal and try again.', function () { show(tab, msg, bad); });
+    });
   }
+  function typing() { var a = document.activeElement; return !!a && app.contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName); }
+
+  // The student list, fetched once and shared by everyone who asks while it's on its way.
+  // `fresh` fetches again even if it's loaded. Lists change after a check-in (someone new),
+  // so writes call studentsChanged(), which refetches in the background.
+  var studentsLoading = null;
+  function loadStudents(fresh) {
+    if (state.students && !fresh) return Promise.resolve(state.students);
+    if (!studentsLoading) {
+      studentsLoading = api('students').then(function (res) {
+        studentsLoading = null;
+        if (res && res.ok && res.students) state.students = res;
+        return res;
+      }, function (err) { studentsLoading = null; throw err; });
+    }
+    return studentsLoading;
+  }
+  function studentsChanged() { state.students = null; loadStudents().catch(function () { /* fetched again when needed */ }); }
 
   // After a change: the answer carries the fresh data for the tab it came from.
   function after(res, kind) {
@@ -116,9 +157,10 @@
   function draw(msg, bad) {
     var need = state.tab === 'students' ? 'students' : 'today';
     if (!state[need]) return viewError(msg || 'That didn\'t load.', function () { show(state.tab); });
-    if (state.tab === 'students') return viewStudents(msg, bad);
-    if (state.tab === 'extras') return viewExtras(msg, bad);
-    return viewToday(msg, bad);
+    if (state.tab === 'students') viewStudents(msg, bad);
+    else if (state.tab === 'extras') viewExtras(msg, bad);
+    else viewToday(msg, bad);
+    state.top = true; // a tab's main view: a background refresh may redraw it
   }
 
   // ---------------------------------------------------------------- views
@@ -177,7 +219,7 @@
         if (!confirm('Remove ' + b.getAttribute('data-who') + ' from ' + li.replace(/^.* · /, '') + '? It won\'t count as a class.')) return;
         b.disabled = true;
         b.textContent = 'removing…';
-        api('undo', { checkinId: b.getAttribute('data-undo') }).then(function (res) { state.students = null; after(res); })
+        api('undo', { checkinId: b.getAttribute('data-undo') }).then(function (res) { studentsChanged(); after(res); })
           .catch(function () { alert('Couldn\'t reach the studio\'s records. Nothing was changed. Please try again.'); draw(); });
       });
     });
@@ -187,7 +229,7 @@
   function viewRoster(classId) {
     if (!state.students) {
       busy();
-      return api('students').then(function (res) { if (handled(res)) { state.students = res; viewRoster(classId); } })
+      return loadStudents().then(function (res) { if (handled(res)) viewRoster(classId); })
         .catch(function () { viewError('Couldn\'t reach the studio\'s records.', function () { viewRoster(classId); }); });
     }
     var c = state.today.classes.filter(function (x) { return x.id === classId; })[0];
@@ -247,7 +289,7 @@
         extra.name = app.querySelector('#nname').value.trim();
       }
       api('checkinMany', extra).then(function (res) {
-        if (res.ok) { state.students = null; after(res); return; }
+        if (res.ok) { studentsChanged(); after(res); return; }
         if (res.status === 'needKey') return viewNeedKey();
         alert(res.error || 'That didn\'t work.');
         count();

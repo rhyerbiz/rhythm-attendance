@@ -756,6 +756,7 @@ function handleRequest_(book, req, now, io) {
   const cfg = configFrom_(book.config);
   const action = str_(req && req.action);
   if (action === 'ping') return { ok: true, studio: cfg.studioName, version: APP_VERSION };
+  if (action === 'todayTab') return { ok: true }; // Code.gs rewrites the Today tab; nothing to decide here
   if (action === 'checkin') return checkin_(book, cfg, req, now, io, {});
   if (action === 'declarePayment') return declarePayment_(book, cfg, req, now, io);
   if (action === 'chat') return chatChoice_(book, req, now, io);

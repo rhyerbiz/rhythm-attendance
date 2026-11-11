@@ -59,6 +59,11 @@
     }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
+    }).then(function (res) {
+      // A row was written: the Sheet's Today tab is rewritten by a separate request, sent once
+      // this answer is on its way to the screen, so the student never waits for it.
+      if (res && res.todayTab) setTimeout(function () { api({ action: 'todayTab' }, { keepalive: true }).catch(function () { /* the hourly sync catches up */ }); }, 0);
+      return res;
     });
   }
 
