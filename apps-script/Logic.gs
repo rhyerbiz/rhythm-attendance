@@ -834,7 +834,9 @@ function checkin_(book, cfg, req, now, io, opts) {
   const name = str_(req.name).replace(/\s+/g, ' ').slice(0, 80);
   // The sign's code first, before anything is written: no code, no new student, no check-in.
   const from = opts.source ? { ok: true, source: opts.source } : codeSource_(book, req.code);
-  if (!from.ok) return { ok: false, status: 'needTag', error: 'To check in, tap or scan the sign at the studio.' };
+  // badCode: the link carried a code that isn't (or is no longer) an active sign's. The page then
+  // says so, so a student at a broken sign tells the studio instead of being sent back to it.
+  if (!from.ok) return { ok: false, status: 'needTag', badCode: !!str_((req.code || {}).t), error: 'To check in, tap or scan the sign at the studio.' };
   // Checking in with a passkey instead of an email (see passkeySaved_).
   if (req.passkey) {
     const byKey = findStudentByPasskey_(book, req.passkey);

@@ -292,6 +292,8 @@ test('once there are tags, only their codes check in, and the Log says which sig
     const no = checkin(makeBook({ tags: TAGS }), at(MON, '18:55'), { code });
     assert.strictEqual(no.ok, false);
     assert.strictEqual(no.status, 'needTag');
+    // A code that isn't an active sign's is told apart from no code at all.
+    assert.strictEqual(no.badCode, !!(code && code.t), JSON.stringify(code));
   }
 });
 

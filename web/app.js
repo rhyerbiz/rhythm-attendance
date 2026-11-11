@@ -347,11 +347,15 @@
   }
 
   // Opened without a sign's code (a bookmark, a shared link, a retired QR code).
-  function viewNeedTag() {
+  function viewNeedTag(badCode) {
     render(
       '<div class="card center">' +
-        '<h1>Check in at the studio</h1>' +
-        '<p>Tap your phone on the check-in sign by the door, or scan its QR code with your camera.</p>' +
+        (badCode
+          // A code the studio doesn't recognise: a retired sign, or a link that was changed.
+          ? '<h1>This sign's code wasn't recognized</h1>' +
+            '<p>Try tapping or scanning the sign by the door again. If it still doesn't work, please let the studio know so they can fix the sign.</p>'
+          : '<h1>Check in at the studio</h1>' +
+            '<p>Tap your phone on the check-in sign by the door, or scan its QR code with your camera.</p>') +
         '<p class="small muted" style="margin-top:14px">This page only checks you in from the sign, so nobody can check in from home.</p>' +
       '</div>'
     );
@@ -547,7 +551,7 @@
     apiRetry(req, 3)
       .then(function (res) {
         setStudio(res.studio);        if (res.student) saveMe(me = { name: res.student.name, email: res.student.email });
-        if (!res.ok && res.status === 'needTag') return viewNeedTag();
+        if (!res.ok && res.status === 'needTag') return viewNeedTag(res.badCode);
         if (!res.ok && res.status === 'needDetails') {
           // A passkey for an email the studio doesn't know yet: show that email, and ask the name.
           if (res.email) me = { name: '', email: res.email };
