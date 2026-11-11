@@ -758,7 +758,233 @@ function handleRequest_(book, req, now, io) {
   if (action === 'declarePayment') return declarePayment_(book, cfg, req, now, io);
   if (action === 'chat') return chatChoice_(book, req, now, io);
   if (action === 'passkey') return passkeySaved_(book, req, io);
+  if (action === 'owner') return ownerRequest_(book, cfg, req, now, io);
   return { ok: false, error: 'Unknown request.' };
+}
+
+// -------------------------------- owner page --------------------------------
+//
+// web/owner.html: the owner's phone page, so she never has to edit the Sheet. Every request
+// carries the owner key (Script Properties → ownerKey, made by the menu's "Make the owner page
+// link"), checked before anything else; without it nothing is read or written. Deliberately no
+// money here (payments, prices): that waits until the owner has said how she wants it.
+
+const PLAN_CHOICES = ['Monthly, 1 class a week', 'Monthly, 2 classes a week'];
+const OWNER_NOTE = 'Owner page';
+
+/** The key from the link against the one in Script Properties. Never accepts a short or missing key. */
+function ownerKeyOk_(given, real) {
+  const g = str_(given), r = str_(real);
+  if (r.length < 20 || g.length !== r.length) return false;
+  let diff = 0;
+  for (let i = 0; i < r.length; i++) diff |= r.charCodeAt(i) ^ g.charCodeAt(i);
+  return diff === 0;
+}
+
+/** A real calendar day as 'yyyy-MM-dd' (so not Feb 30). */
+function validDay_(v) {
+  const s = str_(v);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s + 'T00:00:00Z');
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
+function ownerRequest_(book, cfg, req, now, io) {
+  if (!ownerKeyOk_(req.key, io.ownerKey ? io.ownerKey() : '')) {
+    return { ok: false, status: 'needKey', error: 'This owner link isn\'t valid any more. Please ask for a new one.' };
+  }
+  const op = str_(req.op);
+  if (op === 'today') return ownerToday_(book, cfg, now);
+  if (op === 'students') return ownerStudents_(book, cfg, now);
+  if (op === 'startPlan') return ownerStartPlan_(book, cfg, req, now, io);
+  if (op === 'endPlan') return ownerEndPlan_(book, cfg, req, now, io);
+  if (op === 'addPass') return ownerAddPass_(book, cfg, req, now, io);
+  if (op === 'sortOut') return ownerSortOut_(book, cfg, req, now, io);
+  if (op === 'checkin') return ownerCheckinFromPage_(book, cfg, req, now, io);
+  return { ok: false, error: 'Unknown request.' };
+}
+
+/** Today's classes with who's in and how each is covered, plus everything waiting to be sorted out. */
+function ownerToday_(book, cfg, now) {
+  const log = liveLog_(book).filter(function (l) { return dayStr_(l.ClassDate) === now.date; });
+  const ledgers = {};
+  const ledger = function (sid) { return ledgers[sid] || (ledgers[sid] = ledgerFor_(book, cfg, sid, now.date)); };
+  const person = function (l) {
+    const led = ledger(str_(l.StudentID));
+    const item = led.items.filter(function (i) { return i.id === str_(l.CheckinID); })[0];
+    return {
+      name: str_(l.Student),
+      how: item ? COVERED_LABELS[item.covered] + (item.covered === 'dropin' ? ' ' + money_(item.price) : '') : '',
+      owes: led.owed > 0 ? money_(led.owed) : '', // shown for information only
+    };
+  };
+  const seen = {};
+  const classes = allClassesToday_(book, now.date).map(function (c) {
+    const mine = log.filter(function (l) { return str_(l.ClassID) === c.id; });
+    mine.forEach(function (l) { seen[str_(l.CheckinID)] = true; });
+    return { id: c.id, name: c.name, time: fmtTime_(c.start), people: mine.map(person) };
+  });
+  const other = {};
+  log.filter(function (l) { return !seen[str_(l.CheckinID)]; }).forEach(function (l) {
+    const k = str_(l.Class) || '(no class filled in)';
+    (other[k] = other[k] || []).push(person(l));
+  });
+  return {
+    ok: true, studio: cfg.studioName, version: APP_VERSION,
+    dateLabel: fmtDay_(now.date), time: fmtTime_(now.minutes),
+    classes: classes,
+    other: Object.keys(other).sort().map(function (k) { return { name: k, people: other[k] }; }),
+    extras: reviewItems_(book).map(function (r) {
+      return {
+        id: r.id, name: r.name, note: r.note, dayLabel: r.day === now.date ? 'Today' : fmtDay_(r.day),
+        classes: allClassesToday_(book, r.day).map(function (c) { return { id: c.id, name: c.name, time: fmtTime_(c.start) }; }),
+      };
+    }),
+  };
+}
+
+/** The owner's own Plans rows (not Wix ones), each with an id the page can send back. */
+function ownPlans_(book) {
+  return (book.plans || []).map(function (p, i) {
+    return { row: p, id: str_(p.PlanID) || '#' + i, sid: resolveStudentId_(book, p.Student),
+      plan: str_(p.Plan) || 'Monthly plan', start: dayStr_(p.Start), end: dayStr_(p.End) };
+  });
+}
+
+function ownerStudents_(book, cfg, now) {
+  const own = ownPlans_(book);
+  const wix = allPlans_(book).filter(function (p) { return str_(p.Note) === 'Wix'; });
+  return {
+    ok: true, studio: cfg.studioName, dateLabel: fmtDay_(now.date), today: now.date,
+    planChoices: PLAN_CHOICES,
+    students: (book.students || []).map(function (s) {
+      const sid = str_(s.StudentID);
+      const led = ledgerFor_(book, cfg, sid, now.date);
+      const days = liveLog_(book).filter(function (l) { return str_(l.StudentID) === sid; })
+        .map(function (l) { return dayStr_(l.ClassDate); }).sort();
+      return {
+        id: sid, name: str_(s.Name), email: cleanEmail_(s.Email),
+        plan: led.plan,
+        // Plans she can end: running now or starting later.
+        plans: own.filter(function (p) { return p.sid === sid && (!p.end || p.end >= now.date); }).map(function (p) {
+          return { id: p.id, plan: p.plan, start: p.start, startLabel: p.start ? fmtDay_(p.start) : '', future: !!p.start && p.start > now.date };
+        }),
+        wixPlan: wix.some(function (p) {
+          return resolveStudentId_(book, p.Student) === sid && (!dayStr_(p.End) || dayStr_(p.End) >= now.date);
+        }),
+        credits: led.hasPackage ? led.creditsLeft : null,
+        expires: led.nextExpiry ? fmtDay_(led.nextExpiry) : '',
+        last: days.length ? fmtDay_(days[days.length - 1]) : '',
+      };
+    }).sort(function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1; }),
+  };
+}
+
+function studentById_(book, id) {
+  return (book.students || []).filter(function (s) { return str_(s.StudentID) === str_(id); })[0] || null;
+}
+
+/**
+ * Puts a student on a monthly plan from `start` (today by default; an earlier day covers the
+ * check-ins since then, as everything is recalculated). A plan they already have ends the day before.
+ */
+function ownerStartPlan_(book, cfg, req, now, io) {
+  const s = studentById_(book, req.studentId);
+  if (!s) return { ok: false, error: 'That student wasn\'t found.' };
+  const plan = PLAN_CHOICES.indexOf(str_(req.plan)) >= 0 ? str_(req.plan) : '';
+  if (!plan) return { ok: false, error: 'Please pick a plan.' };
+  const start = str_(req.start) || now.date;
+  if (!validDay_(start) || start > addDays_(now.date, 62) || start < addDays_(now.date, -400)) {
+    return { ok: false, error: 'Please pick a start date.' };
+  }
+  const sid = str_(s.StudentID);
+  ownPlans_(book).forEach(function (p) {
+    if (p.sid !== sid || (p.end && p.end < start)) return;
+    // Ends the day before. One that hadn't started by then ends before it starts: it never runs.
+    p.row.End = addDays_(start, -1);
+    io.update('Plans', p.row, { End: p.row.End });
+  });
+  const row = { PlanID: io.newId('PL'), Student: cleanEmail_(s.Email) || str_(s.Name), Plan: plan, Start: start, End: '', Note: OWNER_NOTE };
+  (book.plans = book.plans || []).push(row);
+  io.append('Plans', row);
+  return Object.assign(ownerStudents_(book, cfg, now), { wrote: true, done: str_(s.Name) + ' is on ' + plan.toLowerCase() + ' from ' + fmtDay_(start) + '.' });
+}
+
+/** Ends one of the owner's plans: today by default, so today's classes are still covered. */
+function ownerEndPlan_(book, cfg, req, now, io) {
+  const p = ownPlans_(book).filter(function (x) { return x.id === str_(req.planId); })[0];
+  if (!p) return { ok: false, error: 'That plan wasn\'t found.' };
+  let end = str_(req.end) || now.date;
+  if (!validDay_(end)) return { ok: false, error: 'Please pick an end date.' };
+  const never = !!p.start && end < p.start;
+  if (never) end = addDays_(p.start, -1); // hadn't started yet: it never runs
+  p.row.End = end;
+  io.update('Plans', p.row, { End: end });
+  const s = studentById_(book, p.sid);
+  return Object.assign(ownerStudents_(book, cfg, now), { wrote: true,
+    done: (s ? str_(s.Name) + '\'s plan' : 'The plan') + (never ? ' is removed.' : ' ends ' + fmtDay_(end) + '.') });
+}
+
+/** A class pass: a number of classes from today, with an optional expiry. No price: that's the money side. */
+function ownerAddPass_(book, cfg, req, now, io) {
+  const s = studentById_(book, req.studentId);
+  if (!s) return { ok: false, error: 'That student wasn\'t found.' };
+  const n = Math.round(num_(req.classes, 0));
+  if (!(n >= 1 && n <= 100)) return { ok: false, error: 'How many classes? (1 to 100)' };
+  const expires = str_(req.expires);
+  if (expires && (!validDay_(expires) || expires < now.date)) return { ok: false, error: 'Please pick an expiry date after today, or leave it empty.' };
+  const row = { PackageID: io.newId('PK'), Student: cleanEmail_(s.Email) || str_(s.Name), Classes: n, Purchased: now.date, Expires: expires, Amount: '', Note: OWNER_NOTE };
+  (book.packages = book.packages || []).push(row);
+  io.append('Packages', row);
+  return Object.assign(ownerStudents_(book, cfg, now), { wrote: true,
+    done: str_(s.Name) + ' has a ' + n + '-class pass' + (expires ? ', until ' + fmtDay_(expires) : '') + '.' });
+}
+
+/**
+ * An "I'm here for a class" visit: matched to a class (one on that day's schedule, or a name
+ * she types), which makes it a normal check-in, or removed (void) if it wasn't a class.
+ */
+function ownerSortOut_(book, cfg, req, now, io) {
+  const l = unscheduledLog_(book).filter(function (x) { return str_(x.CheckinID) === str_(req.checkinId); })[0];
+  if (!l) return Object.assign(ownerToday_(book, cfg, now), { ok: false, error: 'That one was already sorted out.' });
+  const day = dayStr_(l.ClassDate);
+  let fields;
+  if (req.remove) {
+    fields = { Status: 'void' };
+  } else if (str_(req.classId)) {
+    const c = allClassesToday_(book, day).filter(function (x) { return x.id === str_(req.classId); })[0];
+    if (!c) return { ok: false, error: 'That class isn\'t on the schedule that day.' };
+    const dup = liveLog_(book).some(function (x) {
+      return str_(x.StudentID) === str_(l.StudentID) && dayStr_(x.ClassDate) === day && str_(x.ClassID) === c.id;
+    });
+    if (dup) return { ok: false, error: str_(l.Student) + ' is already checked in to ' + c.name + ' that day. Remove this one instead.' };
+    fields = { ClassID: c.id, Class: c.name, Status: 'ok' };
+  } else {
+    const name = str_(req.className).replace(/\s+/g, ' ').slice(0, 80);
+    if (!name) return { ok: false, error: 'Which class was it?' };
+    fields = { Class: name, Status: 'ok' };
+  }
+  Object.keys(fields).forEach(function (k) { l[k] = fields[k]; });
+  io.update('Log', l, fields);
+  return Object.assign(ownerToday_(book, cfg, now), { wrote: true,
+    done: req.remove ? 'Removed.' : str_(l.Student) + ' is checked in to ' + fields.Class + '.' });
+}
+
+/** "Check someone in" on the owner page: the menu's rules (any class today, Source = owner). */
+function ownerCheckinFromPage_(book, cfg, req, now, io) {
+  let email = cleanEmail_(req.email);
+  if (str_(req.studentId)) {
+    const s = studentById_(book, req.studentId);
+    if (!s) return { ok: false, error: 'That student wasn\'t found.' };
+    email = cleanEmail_(s.Email);
+  }
+  const ids = [].concat(req.classIds || []).map(str_).filter(Boolean);
+  if (!ids.length) return { ok: false, error: 'Pick a class.' };
+  const res = ownerCheckin_(book, { email: email, name: str_(req.name), classIds: ids }, now, io);
+  if (!res.ok) return res;
+  const done = res.checkins.map(function (c) { return c.name + (c.already ? ' (already in)' : ''); }).join(', ');
+  return Object.assign(ownerToday_(book, cfg, now), { wrote: res.status === 'ok',
+    done: ((findStudentByEmail_(book, email) || {}).Name || res.student.name) + ': ' + done + '.' });
 }
 
 // --------------------------------- passkeys ---------------------------------

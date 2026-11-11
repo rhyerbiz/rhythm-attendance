@@ -972,10 +972,132 @@ test('Today on a day with no classes says so', () => {
   assert.strictEqual(rows[rows.length - 1][0], 'No classes today.');
 });
 
+// ---------------------------------------------------------------- owner page
+const OWNER_KEY = 'ownerkeyownerkeyownerkey';
+function ownerIo(key) {
+  const io = updIo();
+  io.appended = [];
+  io.append = (tab, row) => io.appended.push([tab, row]);
+  io.ownerKey = () => key === undefined ? OWNER_KEY : key;
+  return io;
+}
+function owner(book, req, now, io) {
+  return fn('handleRequest_')(book, Object.assign({ action: 'owner', key: OWNER_KEY }, req), now || at(MON, '19:10'), io || ownerIo());
+}
+// A Monday with Jess checked in to Salsa 1 as a drop-in, and Sam here for a class not on the schedule.
+function ownerBook() {
+  const book = makeBook();
+  checkin(book, at(MON, '18:50'), { classIds: ['K1'] });
+  checkin(book, at(MON, '18:51'), { email: 'sam@example.com', name: 'Sam Park', unscheduled: true, note: 'Tango makeup' });
+  return book;
+}
+const jessId = (book) => book.students.find((s) => s.Email === 'jess@example.com').StudentID;
+
+test('owner page: nothing without the right key, and no key set means nobody gets in', () => {
+  const book = ownerBook();
+  for (const [key, real] of [['', OWNER_KEY], ['wrong-key-wrong-key-wron', OWNER_KEY], [OWNER_KEY.slice(0, 10), OWNER_KEY], ['', ''], ['short', 'short']]) {
+    const res = fn('handleRequest_')(book, { action: 'owner', key, op: 'students' }, at(MON, '19:10'), ownerIo(real));
+    assert.strictEqual(res.status, 'needKey', JSON.stringify([key, real]));
+    assert.strictEqual(res.students, undefined);
+  }
+  // The check-in API can't ask for owner powers either: it's an ordinary check-in, not the owner's.
+  checkin(book, at(MON, '19:00'), { classIds: ['K2'], source: 'owner', anyTimeToday: true });
+  assert.notStrictEqual(book.log.find((l) => l.ClassID === 'K2').Source, 'owner');
+});
+
+test('owner page: today shows who is in, how each is covered, and what needs sorting out', () => {
+  const res = owner(ownerBook(), { op: 'today' });
+  assert.strictEqual(res.ok, true);
+  same(res.classes.map((c) => [c.name, c.people.map((p) => [p.name, p.how, p.owes])]),
+    [['Salsa 1', [['Jess Lee', 'drop-in $20', '$20']]], ['Bachata 2', []]]);
+  same(res.extras.map((x) => [x.name, x.note, x.dayLabel, x.classes.map((c) => c.id)]), [['Sam Park', 'Tango makeup', 'Today', ['K1', 'K2']]]);
+});
+
+test('owner page: a monthly plan covers check-ins from its start date, and replaces an older plan', () => {
+  const book = ownerBook();
+  const io = ownerIo();
+  const res = owner(book, { op: 'startPlan', studentId: jessId(book), plan: 'Monthly, 1 class a week', start: '2026-11-01' }, null, io);
+  assert.strictEqual(res.ok, true);
+  assert.strictEqual(res.wrote, true);
+  same(io.appended.map(([t, r]) => [t, r.Student, r.Plan, r.Start, r.End]), [['Plans', 'jess@example.com', 'Monthly, 1 class a week', '2026-11-01', '']]);
+  // Today's check-in is now covered, with nothing owed.
+  same(owner(book, { op: 'today' }).classes[0].people, [{ name: 'Jess Lee', how: 'plan', owes: '' }]);
+  // Moving to 2 classes a week from the 15th ends the first plan on the 14th.
+  const io2 = ownerIo();
+  owner(book, { op: 'startPlan', studentId: jessId(book), plan: 'Monthly, 2 classes a week', start: '2026-11-15' }, null, io2);
+  same(io2.updated.map(([t, , f]) => [t, f]), [['Plans', { End: '2026-11-14' }]]);
+  const jess = owner(book, { op: 'students' }).students.find((s) => s.name === 'Jess Lee');
+  same(jess.plans.map((p) => [p.plan, p.start, p.future]), [['Monthly, 1 class a week', '2026-11-01', false], ['Monthly, 2 classes a week', '2026-11-15', true]]);
+  // Only the listed plans, and real dates.
+  assert.strictEqual(owner(book, { op: 'startPlan', studentId: jessId(book), plan: 'Free forever' }).ok, false);
+  assert.strictEqual(owner(book, { op: 'startPlan', studentId: jessId(book), plan: 'Monthly, 1 class a week', start: '2026-02-30' }).ok, false);
+});
+
+test('owner page: ending a plan today keeps today covered; ending one not started yet removes it', () => {
+  const book = ownerBook();
+  owner(book, { op: 'startPlan', studentId: jessId(book), plan: 'Monthly, 1 class a week', start: '2026-10-01' });
+  const id = owner(book, { op: 'students' }).students.find((s) => s.name === 'Jess Lee').plans[0].id;
+  const res = owner(book, { op: 'endPlan', planId: id });
+  assert.ok(res.done.includes('ends Mon Nov 2'), res.done);
+  same(owner(book, { op: 'today' }).classes[0].people[0].how, 'plan');
+  assert.strictEqual(owner(book, { op: 'students' }).students.find((s) => s.name === 'Jess Lee').plans.length, 1); // still runs today
+  owner(book, { op: 'startPlan', studentId: jessId(book), plan: 'Monthly, 2 classes a week', start: '2026-12-01' });
+  const later = owner(book, { op: 'students' }).students.find((s) => s.name === 'Jess Lee').plans.find((p) => p.future);
+  assert.ok(owner(book, { op: 'endPlan', planId: later.id }).done.includes('is removed'));
+});
+
+test('owner page: a class pass is a Packages row with no price, and it covers the next classes', () => {
+  const book = ownerBook();
+  const io = ownerIo();
+  const res = owner(book, { op: 'addPass', studentId: jessId(book), classes: 10, expires: '2027-02-01' }, null, io);
+  same(io.appended.map(([t, r]) => [t, r.Student, r.Classes, r.Purchased, r.Expires, r.Amount]), [['Packages', 'jess@example.com', 10, MON, '2027-02-01', '']]);
+  same(res.students.find((s) => s.name === 'Jess Lee').credits, 9); // today's class used one
+  assert.strictEqual(owner(book, { op: 'addPass', studentId: jessId(book), classes: 0 }).ok, false);
+});
+
+test('owner page: an "I\'m here for a class" visit is matched to a class, or removed', () => {
+  const book = ownerBook();
+  const sam = owner(book, { op: 'today' }).extras[0];
+  const io = ownerIo();
+  const res = owner(book, { op: 'sortOut', checkinId: sam.id, classId: 'K2' }, null, io);
+  same(io.updated.map(([t, , f]) => [t, f]), [['Log', { ClassID: 'K2', Class: 'Bachata 2', Status: 'ok' }]]);
+  same(res.extras, []);
+  same(res.classes[1].people.map((p) => [p.name, p.how]), [['Sam Park', 'drop-in $20']]);
+  // Typed name, for a class not on that day's schedule; and removal.
+  const b2 = ownerBook();
+  const id2 = owner(b2, { op: 'today' }).extras[0].id;
+  assert.strictEqual(owner(b2, { op: 'sortOut', checkinId: id2, className: '  Tango  ' }).done, 'Sam Park is checked in to Tango.');
+  const b3 = ownerBook();
+  const id3 = owner(b3, { op: 'today' }).extras[0].id;
+  owner(b3, { op: 'sortOut', checkinId: id3, remove: true });
+  assert.strictEqual(b3.log.find((l) => l.CheckinID === id3).Status, 'void');
+  assert.strictEqual(owner(b3, { op: 'sortOut', checkinId: id3, remove: true }).ok, false); // already done
+});
+
+test('owner page: matching to a class they already checked in to is refused', () => {
+  const book = ownerBook();
+  checkin(book, at(MON, '18:52'), { email: 'sam@example.com', classIds: ['K1'] });
+  const id = owner(book, { op: 'today' }).extras[0].id;
+  const res = owner(book, { op: 'sortOut', checkinId: id, classId: 'K1' });
+  assert.strictEqual(res.ok, false);
+  assert.ok(/already checked in/.test(res.error));
+});
+
+test('owner page: check someone in to any class today, by student or as someone new', () => {
+  const book = ownerBook();
+  const res = owner(book, { op: 'checkin', studentId: jessId(book), classIds: ['K2'] }, at(MON, '12:00'));
+  assert.strictEqual(res.ok, true);
+  assert.strictEqual(res.done, 'Jess Lee: Bachata 2.');
+  assert.strictEqual(book.log.filter((l) => l.ClassID === 'K2')[0].Source, 'owner');
+  const fresh = owner(book, { op: 'checkin', email: 'new@example.com', name: 'Nia Lowe', classIds: ['K1'] }, at(MON, '12:00'));
+  assert.strictEqual(fresh.done, 'Nia Lowe: Salsa 1.');
+  assert.strictEqual(owner(book, { op: 'checkin', email: 'x@example.com', classIds: ['K1'] }).ok, false); // new needs a name
+});
+
 // The page's own scripts aren't run here, but a syntax error in one blanks the live page.
 test('the check-in page scripts parse', () => {
-  for (const f of ['app.js', 'mock.js', 'config.js']) {
-    new vm.Script(fs.readFileSync(path.join(__dirname, '..', 'web', f), 'utf8'), { filename: f });
+  for (const f of ['web/app.js', 'web/owner.js', 'web/mock.js', 'web/config.js', 'apps-script/Code.gs', 'apps-script/Wix.gs']) {
+    new vm.Script(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), { filename: f });
   }
 });
 

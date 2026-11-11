@@ -49,7 +49,7 @@ function doPost(e) {
     const now = nowParts_();
     const res = handleRequest_(book, req, now, sheetIo_(book));
     // A new row was written: bring the Today tab up to date from what's already in memory.
-    const wrote = res.ok && (res.status === 'ok' || res.status === 'reset' || (res.status === 'unscheduled' && !res.already));
+    const wrote = res.wrote || (res.ok && (res.status === 'ok' || res.status === 'reset' || (res.status === 'unscheduled' && !res.already)));
     if (wrote) {
       try { writeToday_(book, now); } catch (err) { console.warn('Today tab not updated: ' + err); }
     }
@@ -216,6 +216,8 @@ function sheetIo_(book) {
   const ss = ss_(), tz = tz_();
   return {
     newId: function (prefix) { return prefix + Utilities.getUuid().replace(/-/g, '').slice(0, 10); },
+    // The owner page's key (menu: "Make the owner page link"). Only ever compared, never sent out.
+    ownerKey: function () { return PropertiesService.getScriptProperties().getProperty('ownerKey') || ''; },
     allowNewStudent: function () {
       const cache = CacheService.getScriptCache();
       const key = 'newStudents:' + Utilities.formatDate(new Date(), tz, 'yyyyMMddHH');
@@ -287,6 +289,7 @@ function onOpen() {
     .addSeparator()
     .addItem('Turn on the Monday email and nightly backups', 'installTriggers')
     .addItem('Make a code for a new sign or tag…', 'makeTagCode')
+    .addItem('Make the owner page link (replaces the old one)…', 'makeOwnerLink')
     .addItem('Make test links for testers (dev copy)', 'makeTestLinks')
     .addItem('First-time setup', 'setup')
     .addItem('Test the Wix connection (read-only)', 'wixTest')
@@ -512,6 +515,28 @@ function makeTagCode() {
       '\n(Put the page address in pageUrl in Config and this shows it in full.)') +
     (first ? '\n\nThis is the first code, so from now on only signs with a code in the Tags tab can check people in. ' +
       'Rewrite any older sticker or QR code with its new address.' : ''), ui.ButtonSet.OK);
+}
+
+/**
+ * Owner menu: a new private link to the owner page (web/owner.html), for the owner's phone.
+ * The key in it lives only in Script Properties (never in the Sheet or the repo). Making a new
+ * one stops the old link working, so a lost phone or a link sent to the wrong person is fixed
+ * by running this again.
+ */
+function makeOwnerLink() {
+  const ui = SpreadsheetApp.getUi();
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('ownerKey') && ui.alert('New owner link',
+    'This makes a new link and the old one stops working (she\'ll need the new one). Go ahead?',
+    ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+  const key = newTagCode_() + newTagCode_(); // 24 letters ≈ 96 random bits
+  props.setProperty('ownerKey', key);
+  const page = configFrom_(readBook_().config).pageUrl;
+  const base = page ? page.replace(/[?#].*$/, '').replace(/[^/]*$/, '') : '';
+  ui.alert('Owner page link', (base ? base + 'owner.html#k=' + key
+    : 'Your check-in page\'s address followed by owner.html#k=' + key + '\n(Put the page address in pageUrl in Config and this shows it in full.)') +
+    '\n\nSend it to the owner only. She opens it once on her phone and it remembers her; ' +
+    'she can add it to her home screen. Anyone with this link can see student names and change plans.', ui.ButtonSet.OK);
 }
 
 /** Letters only, so Sheets never mistakes a code for a number (like 12e45). 12 letters ≈ 48 random bits. */

@@ -77,6 +77,7 @@ window.MockBackend = (function () {
       newId: function (p) { return p + Math.random().toString(36).slice(2, 10); },
       append: function () { /* rows are already in book */ },
       update: function () { /* the row in book was already changed */ },
+      ownerKey: function () { return 'previewownerkeypreviewowner'; }, // owner.js uses the same in preview
     };
     var res = handleRequest_(book, JSON.parse(JSON.stringify(req)), nowParts(), io);
     save(book);

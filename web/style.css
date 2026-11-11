@@ -199,6 +199,51 @@ input:focus { outline: none; border-color: var(--teal); }
   .check, .check path, .spinner { animation-duration: 0.01s; }
 }
 
+/* ------------------------------------------------ owner page (owner.html) */
+.tabs {
+  display: flex; gap: 6px; max-width: 440px; margin: 6px auto 10px;
+  position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 6px 0;
+}
+.tabs[hidden] { display: none; }
+.tabs button {
+  flex: 1; font: inherit; font-size: 15px; font-weight: 500; padding: 10px 6px;
+  border: 1.5px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--ink); cursor: pointer;
+}
+.tabs button.on { border-color: var(--teal); background: var(--ok-soft); }
+.tabs .count {
+  display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 10px;
+  background: var(--warn-soft); color: var(--warn-ink); font-size: 13px; font-weight: 600;
+}
+.tabs .count[hidden] { display: none; }
+.owner .headline { text-align: center; margin: 4px 0 2px; }
+.owner .headline h1 { margin-bottom: 2px; }
+.owner .btn { margin-top: 12px; }
+.card.slim { padding: 16px 18px; }
+.owner h2 { font-size: 18px; font-weight: 600; margin: 0 0 6px; display: flex; justify-content: space-between; gap: 10px; }
+.owner h2 .n { font-weight: 400; color: var(--muted); white-space: nowrap; }
+.people { list-style: none; margin: 4px 0 0; padding: 0; }
+.people li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); }
+.people .how { text-align: right; color: var(--muted); font-size: 15px; white-space: nowrap; }
+.people .owes { display: block; font-size: 13px; color: var(--warn-ink); }
+.list { list-style: none; margin: 10px 0 0; padding: 0; }
+.list li + li { margin-top: 6px; }
+.list button {
+  display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card);
+}
+.list button b { display: block; font-weight: 500; }
+.list.compact { margin-top: 6px; }
+.list.compact button { padding: 8px 12px; }
+.planrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+.btn.small { width: auto; flex: none; margin: 0; padding: 8px 12px; font-size: 13px; letter-spacing: 0.06em; }
+select {
+  width: 100%; font: inherit; padding: 12px; border-radius: var(--radius);
+  border: 1.5px solid var(--line); background: var(--bg); color: var(--ink);
+}
+input + input, select + input { margin-top: 8px; }
+.done { background: var(--ok-soft); color: var(--ink); border-radius: 12px; padding: 10px 12px; font-size: 15px; margin: 6px 0 10px; }
+.owner .error { margin: 6px 0 10px; }
+
 /* Preview-mode toolbar (mock.js only) */
 .mockbar {
   position: fixed; left: 0; right: 0; bottom: 0;
