@@ -170,8 +170,10 @@ fellow students uses its test links: see [TESTING.md](TESTING.md).
 So the owner never has to edit the Sheet, `owner.html` (next to the check-in page) does the
 everyday jobs from her phone:
 - **Today:** each class with who's in and how it's covered (plan, class pass, drop-in). "Owes" is
-  shown for information only.
-- **Check someone in.**
+  shown for information only. **remove** next to a name undoes one of today's check-ins.
+- **Take attendance** (on each class): a checklist with that class's usual students first (the
+  last six weeks), then everyone else. Tick who's there and check them all in at once.
+- **Check someone in**, including someone new (email and name).
 - **Students:** start, change or end a monthly plan (a start date in the past covers the
   check-ins since then), and add a class pass.
 - **To sort out:** match an "I'm here for a class" visit to its class, or remove it.

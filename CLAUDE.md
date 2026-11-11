@@ -157,7 +157,9 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     (Apps Script can't verify P-256): a passkey is worth exactly what an email is worth. WebAuthn
     calls run straight from a tap (Safari needs the user gesture), and every failure falls back
     to the email box. rpId = the page's hostname, so dev and prod passkeys are separate.
-11i. **Owner page** (`owner.html`, `ownerRequest_`): Today, check someone in, monthly plans
+11i. **Owner page** (`owner.html`, `ownerRequest_`): Today (with "remove": `ownerUndo_`, today's
+    check-ins only), take attendance (`ownerCheckinMany_`; each class's `usual` students, by class
+    name over six weeks, are listed first), check someone in, monthly plans
     (`PLAN_CHOICES`), class passes, and sorting out "I'm here for a class" visits, so the owner
     never edits the Sheet. Every request carries the owner key, checked first (`ownerKeyOk_`
     against Script Properties `ownerKey`, which the menu's "Make the owner page link" makes; a
