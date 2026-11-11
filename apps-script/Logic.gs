@@ -1009,9 +1009,16 @@ function ownerCheckinMany_(book, cfg, req, now, io, who) {
   const classId = str_(req.classId);
   if (!allClassesToday_(book, now.date).some(function (c) { return c.id === classId; })) return { ok: false, error: 'That class isn\'t on today\'s schedule.' };
   const ids = [].concat(req.studentIds || []).map(str_).filter(Boolean);
-  if (!ids.length) return { ok: false, error: 'Tick someone first.' };
+  const newEmail = cleanEmail_(req.email); // "Someone new?": one person typed in, with the ticks
+  if (!ids.length && !newEmail) return { ok: false, error: 'Tick someone first.' };
   if (ids.length > 100) return { ok: false, error: 'That\'s too many at once.' };
   const added = [], already = [];
+  if (newEmail) { // first, so a mistyped email stops everything before anyone is written
+    const res = ownerCheckin_(book, { email: newEmail, name: str_(req.name), classIds: [classId] }, now, io, who);
+    if (!res.ok) return { ok: false, error: !validEmail_(newEmail) ? 'That email doesn\'t look right.'
+      : res.needName ? 'They\'re new: add their name too.' : res.error || 'That didn\'t work.' };
+    (res.status === 'ok' ? added : already).push(str_((findStudentByEmail_(book, newEmail) || {}).Name || res.student.name).split(' ')[0]);
+  }
   ids.forEach(function (id) {
     const s = studentById_(book, id);
     if (!s || !cleanEmail_(s.Email)) return;

@@ -1116,6 +1116,16 @@ test('owner page: the attendance checklist lists a class\'s usual students first
   // Only a class on today's schedule, and only known students.
   assert.strictEqual(owner(book, { op: 'checkinMany', classId: 'K3', studentIds: [id('cy@example.com')] }, at(MON, '19:05')).ok, false);
   assert.strictEqual(owner(book, { op: 'checkinMany', classId: 'K1', studentIds: ['nobody'] }, at(MON, '19:05')).done, 'Nobody new to check in.');
+  // "Someone new?" on the same list: typed in alongside the ticks, checked before anyone is written.
+  const rows = book.log.length;
+  assert.strictEqual(owner(book, { op: 'checkinMany', classId: 'K2', studentIds: [id('cy@example.com')], email: 'dee@example' }, at(MON, '19:05')).error, 'That email doesn\'t look right.');
+  assert.strictEqual(owner(book, { op: 'checkinMany', classId: 'K2', studentIds: [id('cy@example.com')], email: 'dee@example.com' }, at(MON, '19:05')).error, 'They\'re new: add their name too.');
+  assert.strictEqual(book.log.length, rows);
+  const both = owner(book, { op: 'checkinMany', classId: 'K2', studentIds: [id('cy@example.com')], email: 'Dee@Example.com', name: 'Dee Lane' }, at(MON, '19:05'));
+  assert.strictEqual(both.done, 'Checked in 2: Dee, Cy.');
+  assert.strictEqual(book.students.find((s) => s.Email === 'dee@example.com').Name, 'Dee Lane');
+  // A typed email that's already a student just checks them in; no name needed.
+  assert.strictEqual(owner(book, { op: 'checkinMany', classId: 'K1', email: 'cy@example.com' }, at(MON, '19:05')).done, 'Checked in 1: Cy.');
 });
 
 test('owner page: Remove undoes one of today\'s check-ins, and only today\'s', () => {

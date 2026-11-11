@@ -159,7 +159,7 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     to the email box. rpId = the page's hostname, so dev and prod passkeys are separate.
 11i. **Owner page** (`owner.html`, `ownerRequest_`): Today (with "remove": `ownerUndo_`, today's
     check-ins only), take attendance (`ownerCheckinMany_`; each class's `usual` students, by class
-    name over six weeks, are listed first), check someone in, monthly plans
+    name over six weeks, are listed first; "Someone new?" adds a first-timer by email + name), monthly plans
     (`PLAN_CHOICES`), class passes, and sorting out "I'm here for a class" visits, so the owner
     never edits the Sheet. Every request carries a named link's key, checked first (`ownerWho_`
     against Script Properties `ownerKeys` = {name: key}, made per person by the menu's "Make an

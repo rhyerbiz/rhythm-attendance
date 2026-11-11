@@ -173,7 +173,7 @@ everyday jobs from her phone:
   shown for information only. **remove** next to a name undoes one of today's check-ins.
 - **Take attendance** (on each class): a checklist with that class's usual students first (the
   last six weeks), then everyone else. Tick who's there and check them all in at once.
-- **Check someone in**, including someone new (email and name).
+  **Someone new?** at the bottom adds a first-timer (email and name) to that class.
 - **Students:** start, change or end a monthly plan (a start date in the past covers the
   check-ins since then), and add a class pass.
 - **To sort out:** match an "I'm here for a class" visit to its class, or remove it.
@@ -207,7 +207,7 @@ Most of this is on [the owner page](#the-owner-page); the Sheet does the rest.
 | To… | Do this |
 |---|---|
 | See who's in class today | The **Today** tab: each class today, who checked in, and whether it was a plan, a class pass or a drop-in (and if they owe). It updates after every check-in, so it works in the Google Sheets phone app. |
-| Check in someone without their phone, or new at the door | **Check-in → Check someone in…** (on a computer). Type their email (or name), then pick the class. Any class today works, even after it ended. For another day, add a **Log** row by hand. |
+| Check in someone without their phone, or new at the door | On the owner page: **Take attendance** on the class (**Someone new?** for a first-timer). Or on a computer: **Check-in → Check someone in…**. Type their email (or name), then pick the class. Any class today works, even after it ended. For another day, add a **Log** row by hand. |
 | Add or change a class | Edit **Schedule**. Set `Active` to `no` to pause one; `LastDate` ends it. (With Wix connected, change classes in Wix instead.) |
 | Sell a punch pass | Sold in person: a **Packages** row (e.g. `Classes` 10, with an `Expires` date if it has one). Sold on Wix: make it a Pricing Plan and add its name to `wixPacks` in **Config** (e.g. `Single Class = 1, 10 Class Pass = 10`); purchases then appear on their own. |
 | Put someone on a monthly plan | Add a row to **Plans**: pick the student, the `Plan` (`1 class/week` or `2 classes/week`) and the `Start` date. Their check-ins show as covered by the plan. When they stop, fill in `End`. Bill the plan in Venmo as you do now. |
