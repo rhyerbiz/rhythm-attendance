@@ -577,8 +577,10 @@
   function start() {
     logoFallback();
     setStudio();
-    // Never mistake the test copy for the real one.
-    if (!MOCK && ENV.name === 'dev') {
+    // Never mistake the test copy for the real one. Off for now: since 2026-11-11 the studio's
+    // printed sign points at the dev copy until prod is set up. Turn it back on at the switch.
+    var SHOW_DEV_BADGE = false;
+    if (SHOW_DEV_BADGE && !MOCK && ENV.name === 'dev') {
       var badge = document.createElement('span');
       badge.className = 'envbadge';
       badge.textContent = 'DEV';
