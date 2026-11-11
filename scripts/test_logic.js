@@ -972,4 +972,11 @@ test('Today on a day with no classes says so', () => {
   assert.strictEqual(rows[rows.length - 1][0], 'No classes today.');
 });
 
+// The page's own scripts aren't run here, but a syntax error in one blanks the live page.
+test('the check-in page scripts parse', () => {
+  for (const f of ['app.js', 'mock.js', 'config.js']) {
+    new vm.Script(fs.readFileSync(path.join(__dirname, '..', 'web', f), 'utf8'), { filename: f });
+  }
+});
+
 console.log(passed + ' passed' + (process.exitCode ? ', some FAILED' : ''));
