@@ -193,7 +193,8 @@ on their phone, and from then on it remembers them; they can add it to their hom
   link, made before links had names, counts as "Owner".
 - Making a link for a name that already has one replaces it, and the old one stops working. Do
   that if a phone is lost or a link went to the wrong person. **Turn off an owner page link…**
-  removes someone's link altogether.
+  removes someone's link altogether. **Rename an owner page link…** changes only the name it
+  records (e.g. "Owner" to "Caress"); the link itself keeps working.
 - Anyone with the link can see student names and emails and change plans, so treat it like a
   password.
 - At handover, make a new link in the studio's copy. (A Google sign-in instead of the link is

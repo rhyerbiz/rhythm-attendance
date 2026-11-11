@@ -295,6 +295,7 @@ function onOpen() {
     .addItem('Turn on the Monday email and nightly backups', 'installTriggers')
     .addItem('Make a code for a new sign or tag…', 'makeTagCode')
     .addItem('Make an owner page link…', 'makeOwnerLink')
+    .addItem('Rename an owner page link…', 'renameOwnerLink')
     .addItem('Turn off an owner page link…', 'turnOffOwnerLink')
     .addItem('Make test links for testers (dev copy)', 'makeTestLinks')
     .addItem('First-time setup', 'setup')
@@ -571,6 +572,33 @@ function makeOwnerLink() {
     : 'Your check-in page\'s address followed by owner.html#k=' + keys[name] + '\n(Put the page address in pageUrl in Config and this shows it in full.)') +
     '\n\nSend it to ' + name + ' only. They open it once on their phone and it remembers them; ' +
     'they can add it to their home screen. Anyone with this link can see student names and change plans.', ui.ButtonSet.OK);
+}
+
+/**
+ * Owner menu: renames a link without changing it, so its holder needs nothing new. Check-ins
+ * already made with it keep the old name in Log → By.
+ */
+function renameOwnerLink() {
+  const ui = SpreadsheetApp.getUi();
+  const keys = ownerKeys_();
+  const names = Object.keys(keys);
+  if (!names.length) { ui.alert('There are no owner page links.'); return; }
+  const r1 = ui.prompt('Rename an owner page link', 'Which link? ' + names.join(', '), ui.ButtonSet.OK_CANCEL);
+  if (r1.getSelectedButton() !== ui.Button.OK) return;
+  const from = names.filter(function (n) { return n.toLowerCase() === r1.getResponseText().trim().toLowerCase(); })[0];
+  if (!from) { ui.alert('No link is called "' + r1.getResponseText().trim() + '".'); return; }
+  const r2 = ui.prompt('Rename ' + from + '\'s link', 'New name (e.g. Caress). The link itself stays the same.', ui.ButtonSet.OK_CANCEL);
+  if (r2.getSelectedButton() !== ui.Button.OK) return;
+  const to = r2.getResponseText().replace(/\s+/g, ' ').trim().slice(0, 30);
+  if (!to || to === from) return;
+  if (names.some(function (n) { return n !== from && n.toLowerCase() === to.toLowerCase(); })) {
+    ui.alert('There is already a link called ' + to + '.');
+    return;
+  }
+  keys[to] = keys[from];
+  delete keys[from];
+  saveOwnerKeys_(keys);
+  ui.alert(from + '\'s link is now called ' + to + '. It still works as before; from now on its check-ins say "' + to + '".');
 }
 
 /** Owner menu: stops one person's owner page link working. */
