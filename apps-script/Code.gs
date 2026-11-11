@@ -216,8 +216,8 @@ function sheetIo_(book) {
   const ss = ss_(), tz = tz_();
   return {
     newId: function (prefix) { return prefix + Utilities.getUuid().replace(/-/g, '').slice(0, 10); },
-    // The owner page's key (menu: "Make the owner page link"). Only ever compared, never sent out.
-    ownerKey: function () { return PropertiesService.getScriptProperties().getProperty('ownerKey') || ''; },
+    // The owner page's links, {name: key} (menu: "Make an owner page link"). Only ever compared, never sent out.
+    ownerKeys: ownerKeys_,
     allowNewStudent: function () {
       const cache = CacheService.getScriptCache();
       const key = 'newStudents:' + Utilities.formatDate(new Date(), tz, 'yyyyMMddHH');
@@ -238,7 +238,12 @@ function sheetIo_(book) {
     },
     append: function (tab, row) {
       const headers = book.headers[tab];
-      ss.getSheetByName(tab).appendRow(headers.map(function (h) { return toCell_(row[h], tz); }));
+      const sh = ss.getSheetByName(tab);
+      // A column the tab doesn't have yet (Log's By, on a Sheet from before it existed) is added first.
+      Object.keys(row).forEach(function (h) {
+        if (str_(row[h]) !== '' && headers.indexOf(h) < 0 && (SCHEMA[tab] || []).indexOf(h) >= 0) addHeader_(sh, headers, h);
+      });
+      sh.appendRow(headers.map(function (h) { return toCell_(row[h], tz); }));
     },
   };
 }
@@ -289,7 +294,8 @@ function onOpen() {
     .addSeparator()
     .addItem('Turn on the Monday email and nightly backups', 'installTriggers')
     .addItem('Make a code for a new sign or tag…', 'makeTagCode')
-    .addItem('Make the owner page link (replaces the old one)…', 'makeOwnerLink')
+    .addItem('Make an owner page link…', 'makeOwnerLink')
+    .addItem('Turn off an owner page link…', 'turnOffOwnerLink')
     .addItem('Make test links for testers (dev copy)', 'makeTestLinks')
     .addItem('First-time setup', 'setup')
     .addItem('Test the Wix connection (read-only)', 'wixTest')
@@ -471,7 +477,10 @@ function checkInSomeone() {
   let res;
   try {
     book = readBook_(); // fresh, in case a student checked in while the owner was typing
-    res = ownerCheckin_(book, { email: email, name: name, classIds: picked }, now, sheetIo_(book));
+    // By: whoever is using the menu (their Google email), so the Log says who checked them in.
+    let by = '';
+    try { by = Session.getActiveUser().getEmail(); } catch (e) { /* not available */ }
+    res = ownerCheckin_(book, { email: email, name: name, classIds: picked }, now, sheetIo_(book), by || 'Sheet menu');
     if (res.ok) writeToday_(book, now);
   } finally {
     lock.releaseLock();
@@ -518,25 +527,65 @@ function makeTagCode() {
 }
 
 /**
- * Owner menu: a new private link to the owner page (web/owner.html), for the owner's phone.
- * The key in it lives only in Script Properties (never in the Sheet or the repo). Making a new
- * one stops the old link working, so a lost phone or a link sent to the wrong person is fixed
- * by running this again.
+ * The owner page's links as {name: key}, kept only in Script Properties (never in the Sheet or
+ * the repo). Each link has a name, so the Log's By column says who checked someone in. The very
+ * first link, made before links had names, is still honoured as "Owner".
+ */
+function ownerKeys_() {
+  const props = PropertiesService.getScriptProperties();
+  let keys = {};
+  try { keys = JSON.parse(props.getProperty('ownerKeys') || '{}') || {}; } catch (e) { keys = {}; }
+  const legacy = props.getProperty('ownerKey');
+  if (legacy && !keys.Owner) keys.Owner = legacy;
+  return keys;
+}
+
+function saveOwnerKeys_(keys) {
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('ownerKeys', JSON.stringify(keys));
+  props.deleteProperty('ownerKey'); // now kept in ownerKeys (as "Owner")
+}
+
+/**
+ * Owner menu: a private link to the owner page (web/owner.html) for one person's phone, named
+ * after them. Making one for a name that already has a link replaces it (the old one stops
+ * working), so a lost phone or a link sent to the wrong person is fixed by running this again.
  */
 function makeOwnerLink() {
   const ui = SpreadsheetApp.getUi();
-  const props = PropertiesService.getScriptProperties();
-  if (props.getProperty('ownerKey') && ui.alert('New owner link',
-    'This makes a new link and the old one stops working (she\'ll need the new one). Go ahead?',
+  const keys = ownerKeys_();
+  const names = Object.keys(keys);
+  const r = ui.prompt('Owner page link', 'Who is this link for? Their name is recorded on each check-in they make (e.g. Caress).' +
+    (names.length ? '\n\nLinks so far: ' + names.join(', ') + '. Using one of these names replaces that link.' : ''), ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  const typed = r.getResponseText().replace(/\s+/g, ' ').trim().slice(0, 30);
+  if (!typed) return;
+  const name = names.filter(function (n) { return n.toLowerCase() === typed.toLowerCase(); })[0] || typed;
+  if (keys[name] && ui.alert('Replace ' + name + '\'s link?', 'Their current link will stop working, and they\'ll need the new one.',
     ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
-  const key = newTagCode_() + newTagCode_(); // 24 letters ≈ 96 random bits
-  props.setProperty('ownerKey', key);
+  keys[name] = newTagCode_() + newTagCode_(); // 24 letters ≈ 96 random bits
+  saveOwnerKeys_(keys);
   const page = configFrom_(readBook_().config).pageUrl;
   const base = page ? page.replace(/[?#].*$/, '').replace(/[^/]*$/, '') : '';
-  ui.alert('Owner page link', (base ? base + 'owner.html#k=' + key
-    : 'Your check-in page\'s address followed by owner.html#k=' + key + '\n(Put the page address in pageUrl in Config and this shows it in full.)') +
-    '\n\nSend it to the owner only. She opens it once on her phone and it remembers her; ' +
-    'she can add it to her home screen. Anyone with this link can see student names and change plans.', ui.ButtonSet.OK);
+  ui.alert('Owner page link for ' + name, (base ? base + 'owner.html#k=' + keys[name]
+    : 'Your check-in page\'s address followed by owner.html#k=' + keys[name] + '\n(Put the page address in pageUrl in Config and this shows it in full.)') +
+    '\n\nSend it to ' + name + ' only. They open it once on their phone and it remembers them; ' +
+    'they can add it to their home screen. Anyone with this link can see student names and change plans.', ui.ButtonSet.OK);
+}
+
+/** Owner menu: stops one person's owner page link working. */
+function turnOffOwnerLink() {
+  const ui = SpreadsheetApp.getUi();
+  const keys = ownerKeys_();
+  const names = Object.keys(keys);
+  if (!names.length) { ui.alert('There are no owner page links.'); return; }
+  const r = ui.prompt('Turn off an owner page link', 'Whose link? ' + names.join(', '), ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  const name = names.filter(function (n) { return n.toLowerCase() === r.getResponseText().trim().toLowerCase(); })[0];
+  if (!name) { ui.alert('No link is called "' + r.getResponseText().trim() + '".'); return; }
+  delete keys[name];
+  saveOwnerKeys_(keys);
+  ui.alert(name + '\'s link is turned off.');
 }
 
 /** Letters only, so Sheets never mistakes a code for a number (like 12e45). 12 letters ≈ 48 random bits. */

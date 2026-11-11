@@ -140,7 +140,8 @@
       var owes = p.owes && !shown[p.name];
       shown[p.name] = true;
       return '<li><span>' + esc(p.name) +
-          '<button class="linkish remove" type="button" data-undo="' + esc(p.checkinId) + '" data-who="' + esc(p.name) + '">remove</button></span>' +
+          '<button class="linkish remove" type="button" data-undo="' + esc(p.checkinId) + '" data-who="' + esc(p.name) + '">remove</button>' +
+          (p.by ? '<span class="by">checked in by ' + esc(p.by) + '</span>' : '') + '</span>' +
         '<span class="how">' + esc(p.how) +
         (owes ? '<span class="owes">owes ' + esc(p.owes) + ' in all</span>' : '') + '</span></li>';
     }).join('') + '</ul>';

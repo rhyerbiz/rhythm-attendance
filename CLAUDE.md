@@ -161,10 +161,12 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     check-ins only), take attendance (`ownerCheckinMany_`; each class's `usual` students, by class
     name over six weeks, are listed first), check someone in, monthly plans
     (`PLAN_CHOICES`), class passes, and sorting out "I'm here for a class" visits, so the owner
-    never edits the Sheet. Every request carries the owner key, checked first (`ownerKeyOk_`
-    against Script Properties `ownerKey`, which the menu's "Make the owner page link" makes; a
-    new link revokes the old one). The key travels in the link's `#k=` fragment, is kept in the
-    phone's localStorage, and is never in the Sheet or the repo. **No money on purpose:**
+    never edits the Sheet. Every request carries a named link's key, checked first (`ownerWho_`
+    against Script Properties `ownerKeys` = {name: key}, made per person by the menu's "Make an
+    owner page link…"; the pre-names `ownerKey` counts as "Owner"). The name goes into Log → `By`
+    on each check-in they make (blank = the student themselves; the Sheet menu writes the user's
+    email), and into Note on removals and sort-outs. The key travels in the link's `#k=` fragment,
+    is kept in the phone's localStorage, and is never in the Sheet or the repo. **No money on purpose:**
     payments and prices wait until the owner has said what she wants. A Google sign-in is planned
     to replace the link when prod is set up.
 12. **The Sheet's `studioName` wins.** The page remembers the last name the API sent;

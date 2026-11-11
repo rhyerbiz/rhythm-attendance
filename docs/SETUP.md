@@ -181,12 +181,19 @@ everyday jobs from her phone:
 It doesn't handle money on purpose: payments and prices stay in the Sheet until that's decided
 with the owner.
 
-**Giving her the link:** in the Sheet, choose **Check-in → Make the owner page link**, and send her
-the address it shows (`…/owner.html#k=…`). She opens it once on her phone, and from then on it
-remembers her; she can add it to her home screen.
-- The key after `#k=` lives only in Script Properties (`ownerKey`), never in the Sheet or the repo.
-- Running the menu item again makes a new link and stops the old one working. Do that if a phone
-  is lost or the link went to the wrong person.
+**Giving someone a link:** in the Sheet, choose **Check-in → Make an owner page link…**, type who
+it's for (e.g. Caress), and send them the address it shows (`…/owner.html#k=…`). They open it once
+on their phone, and from then on it remembers them; they can add it to their home screen.
+- Each person gets their own link, named after them. That name goes into the Log's **By** column
+  for every check-in they make, so you can see who checked someone in. (A blank **By** means the
+  student checked in themselves; the Sheet menu's **Check someone in…** records the email of
+  whoever used it.) Removing a check-in or sorting out a visit adds "removed by …" or
+  "matched by …" to that row's **Note**.
+- The keys live only in Script Properties (`ownerKeys`), never in the Sheet or the repo. The first
+  link, made before links had names, counts as "Owner".
+- Making a link for a name that already has one replaces it, and the old one stops working. Do
+  that if a phone is lost or a link went to the wrong person. **Turn off an owner page link…**
+  removes someone's link altogether.
 - Anyone with the link can see student names and emails and change plans, so treat it like a
   password.
 - At handover, make a new link in the studio's copy. (A Google sign-in instead of the link is

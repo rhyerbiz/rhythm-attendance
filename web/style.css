@@ -241,6 +241,7 @@ select {
   border: 1.5px solid var(--line); background: var(--bg); color: var(--ink);
 }
 input + input, select + input { margin-top: 8px; }
+.people .by { display: block; font-size: 13px; color: var(--muted); }
 .people .remove { font-size: 12px; margin-left: 6px; padding: 2px 4px; vertical-align: 1px; }
 .owner .group { margin: 16px 0 0; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .owner .pick[hidden] { display: none; }

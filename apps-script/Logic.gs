@@ -18,7 +18,9 @@ const SCHEMA = {
   Config: ['Key', 'Value', 'Notes'],
   Schedule: ['ClassID', 'Class', 'Days', 'Start', 'Minutes', 'Price', 'Active', 'FirstDate', 'LastDate'],
   Students: ['StudentID', 'Name', 'Email', 'Phone', 'Venmo', 'FirstSeen', 'Notes', 'Chat', 'Passkey'],
-  Log: ['CheckinID', 'When', 'ClassDate', 'StudentID', 'Student', 'ClassID', 'Class', 'Price', 'Source', 'Status', 'Note'],
+  // By: who checked them in when it wasn't the student (an owner page link's name, or the Sheet
+  // menu user's email). Blank = the student did it themselves.
+  Log: ['CheckinID', 'When', 'ClassDate', 'StudentID', 'Student', 'ClassID', 'Class', 'Price', 'Source', 'Status', 'Note', 'By'],
   Packages: ['PackageID', 'Student', 'Classes', 'Purchased', 'Expires', 'Amount', 'Note'],
   Plans: ['PlanID', 'Student', 'Plan', 'Start', 'End', 'Note'],
   Payments: ['PaymentID', 'Student', 'Amount', 'Date', 'For', 'Status', 'Method', 'Note', 'Covers'],
@@ -765,7 +767,7 @@ function handleRequest_(book, req, now, io) {
 // -------------------------------- owner page --------------------------------
 //
 // web/owner.html: the owner's phone page, so she never has to edit the Sheet. Every request
-// carries the owner key (Script Properties → ownerKey, made by the menu's "Make the owner page
+// carries the key of a named owner link (Script Properties → ownerKeys, made by the menu's "Make an owner page
 // link"), checked before anything else; without it nothing is read or written. Deliberately no
 // money here (payments, prices): that waits until the owner has said how she wants it.
 
@@ -789,20 +791,35 @@ function validDay_(v) {
   return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 }
 
+/**
+ * Whose owner page link this is: each link has a name ({name: key} from Script Properties), so
+ * the Log can say who checked someone in. '' = no link matches.
+ */
+function ownerWho_(given, keys) {
+  let who = '';
+  Object.keys(keys || {}).forEach(function (name) { if (ownerKeyOk_(given, keys[name])) who = name; });
+  return who;
+}
+
+/** Adds "· removed by Rob Nov 11"-style history to a row's Note, keeping what was there. */
+function noteWith_(note, text) { return str_(note) ? str_(note) + ' · ' + text : text; }
+
 function ownerRequest_(book, cfg, req, now, io) {
-  if (!ownerKeyOk_(req.key, io.ownerKey ? io.ownerKey() : '')) {
+  const keys = io.ownerKeys ? io.ownerKeys() : io.ownerKey ? { Owner: io.ownerKey() } : {};
+  const who = ownerWho_(req.key, keys);
+  if (!who) {
     return { ok: false, status: 'needKey', error: 'This owner link isn\'t valid any more. Please ask for a new one.' };
   }
   const op = str_(req.op);
   if (op === 'today') return ownerToday_(book, cfg, now);
   if (op === 'students') return ownerStudents_(book, cfg, now);
-  if (op === 'startPlan') return ownerStartPlan_(book, cfg, req, now, io);
-  if (op === 'endPlan') return ownerEndPlan_(book, cfg, req, now, io);
-  if (op === 'addPass') return ownerAddPass_(book, cfg, req, now, io);
-  if (op === 'sortOut') return ownerSortOut_(book, cfg, req, now, io);
-  if (op === 'checkin') return ownerCheckinFromPage_(book, cfg, req, now, io);
-  if (op === 'checkinMany') return ownerCheckinMany_(book, cfg, req, now, io);
-  if (op === 'undo') return ownerUndo_(book, cfg, req, now, io);
+  if (op === 'startPlan') return ownerStartPlan_(book, cfg, req, now, io, who);
+  if (op === 'endPlan') return ownerEndPlan_(book, cfg, req, now, io, who);
+  if (op === 'addPass') return ownerAddPass_(book, cfg, req, now, io, who);
+  if (op === 'sortOut') return ownerSortOut_(book, cfg, req, now, io, who);
+  if (op === 'checkin') return ownerCheckinFromPage_(book, cfg, req, now, io, who);
+  if (op === 'checkinMany') return ownerCheckinMany_(book, cfg, req, now, io, who);
+  if (op === 'undo') return ownerUndo_(book, cfg, req, now, io, who);
   return { ok: false, error: 'Unknown request.' };
 }
 
@@ -815,7 +832,7 @@ function ownerToday_(book, cfg, now) {
     const led = ledger(str_(l.StudentID));
     const item = led.items.filter(function (i) { return i.id === str_(l.CheckinID); })[0];
     return {
-      name: str_(l.Student), studentId: str_(l.StudentID), checkinId: str_(l.CheckinID),
+      name: str_(l.Student), studentId: str_(l.StudentID), checkinId: str_(l.CheckinID), by: str_(l.By),
       how: item ? COVERED_LABELS[item.covered] + (item.covered === 'dropin' ? ' ' + money_(item.price) : '') : '',
       owes: led.owed > 0 ? money_(led.owed) : '', // shown for information only
     };
@@ -901,7 +918,7 @@ function studentById_(book, id) {
  * Puts a student on a monthly plan from `start` (today by default; an earlier day covers the
  * check-ins since then, as everything is recalculated). A plan they already have ends the day before.
  */
-function ownerStartPlan_(book, cfg, req, now, io) {
+function ownerStartPlan_(book, cfg, req, now, io, who) {
   const s = studentById_(book, req.studentId);
   if (!s) return { ok: false, error: 'That student wasn\'t found.' };
   const plan = PLAN_CHOICES.indexOf(str_(req.plan)) >= 0 ? str_(req.plan) : '';
@@ -917,14 +934,14 @@ function ownerStartPlan_(book, cfg, req, now, io) {
     p.row.End = addDays_(start, -1);
     io.update('Plans', p.row, { End: p.row.End });
   });
-  const row = { PlanID: io.newId('PL'), Student: cleanEmail_(s.Email) || str_(s.Name), Plan: plan, Start: start, End: '', Note: OWNER_NOTE };
+  const row = { PlanID: io.newId('PL'), Student: cleanEmail_(s.Email) || str_(s.Name), Plan: plan, Start: start, End: '', Note: OWNER_NOTE + ' (' + str_(who) + ')' };
   (book.plans = book.plans || []).push(row);
   io.append('Plans', row);
   return Object.assign(ownerStudents_(book, cfg, now), { wrote: true, done: str_(s.Name) + ' is on ' + plan.toLowerCase() + ' from ' + fmtDay_(start) + '.' });
 }
 
 /** Ends one of the owner's plans: today by default, so today's classes are still covered. */
-function ownerEndPlan_(book, cfg, req, now, io) {
+function ownerEndPlan_(book, cfg, req, now, io, who) {
   const p = ownPlans_(book).filter(function (x) { return x.id === str_(req.planId); })[0];
   if (!p) return { ok: false, error: 'That plan wasn\'t found.' };
   let end = str_(req.end) || now.date;
@@ -939,14 +956,14 @@ function ownerEndPlan_(book, cfg, req, now, io) {
 }
 
 /** A class pass: a number of classes from today, with an optional expiry. No price: that's the money side. */
-function ownerAddPass_(book, cfg, req, now, io) {
+function ownerAddPass_(book, cfg, req, now, io, who) {
   const s = studentById_(book, req.studentId);
   if (!s) return { ok: false, error: 'That student wasn\'t found.' };
   const n = Math.round(num_(req.classes, 0));
   if (!(n >= 1 && n <= 100)) return { ok: false, error: 'How many classes? (1 to 100)' };
   const expires = str_(req.expires);
   if (expires && (!validDay_(expires) || expires < now.date)) return { ok: false, error: 'Please pick an expiry date after today, or leave it empty.' };
-  const row = { PackageID: io.newId('PK'), Student: cleanEmail_(s.Email) || str_(s.Name), Classes: n, Purchased: now.date, Expires: expires, Amount: '', Note: OWNER_NOTE };
+  const row = { PackageID: io.newId('PK'), Student: cleanEmail_(s.Email) || str_(s.Name), Classes: n, Purchased: now.date, Expires: expires, Amount: '', Note: OWNER_NOTE + ' (' + str_(who) + ')' };
   (book.packages = book.packages || []).push(row);
   io.append('Packages', row);
   return Object.assign(ownerStudents_(book, cfg, now), { wrote: true,
@@ -957,7 +974,7 @@ function ownerAddPass_(book, cfg, req, now, io) {
  * An "I'm here for a class" visit: matched to a class (one on that day's schedule, or a name
  * she types), which makes it a normal check-in, or removed (void) if it wasn't a class.
  */
-function ownerSortOut_(book, cfg, req, now, io) {
+function ownerSortOut_(book, cfg, req, now, io, who) {
   const l = unscheduledLog_(book).filter(function (x) { return str_(x.CheckinID) === str_(req.checkinId); })[0];
   if (!l) return Object.assign(ownerToday_(book, cfg, now), { ok: false, error: 'That one was already sorted out.' });
   const day = dayStr_(l.ClassDate);
@@ -977,6 +994,7 @@ function ownerSortOut_(book, cfg, req, now, io) {
     if (!name) return { ok: false, error: 'Which class was it?' };
     fields = { Class: name, Status: 'ok' };
   }
+  fields.Note = noteWith_(l.Note, (req.remove ? 'removed by ' : 'matched by ') + str_(who) + ' ' + fmtDay_(now.date));
   Object.keys(fields).forEach(function (k) { l[k] = fields[k]; });
   io.update('Log', l, fields);
   return Object.assign(ownerToday_(book, cfg, now), { wrote: true,
@@ -987,7 +1005,7 @@ function ownerSortOut_(book, cfg, req, now, io) {
  * The attendance checklist: several known students into one class today. Someone already in
  * comes back as already, so a double tap or a retry is harmless.
  */
-function ownerCheckinMany_(book, cfg, req, now, io) {
+function ownerCheckinMany_(book, cfg, req, now, io, who) {
   const classId = str_(req.classId);
   if (!allClassesToday_(book, now.date).some(function (c) { return c.id === classId; })) return { ok: false, error: 'That class isn\'t on today\'s schedule.' };
   const ids = [].concat(req.studentIds || []).map(str_).filter(Boolean);
@@ -997,7 +1015,7 @@ function ownerCheckinMany_(book, cfg, req, now, io) {
   ids.forEach(function (id) {
     const s = studentById_(book, id);
     if (!s || !cleanEmail_(s.Email)) return;
-    const res = ownerCheckin_(book, { email: cleanEmail_(s.Email), classIds: [classId] }, now, io);
+    const res = ownerCheckin_(book, { email: cleanEmail_(s.Email), classIds: [classId] }, now, io, who);
     if (!res.ok) return;
     (res.status === 'ok' ? added : already).push(str_(s.Name).split(' ')[0]);
   });
@@ -1007,16 +1025,17 @@ function ownerCheckinMany_(book, cfg, req, now, io) {
 }
 
 /** Removes one of today's check-ins (a mistaken tick): Status = void, like every delete here. */
-function ownerUndo_(book, cfg, req, now, io) {
+function ownerUndo_(book, cfg, req, now, io, who) {
   const l = liveLog_(book).filter(function (x) { return str_(x.CheckinID) === str_(req.checkinId) && dayStr_(x.ClassDate) === now.date; })[0];
   if (!l) return Object.assign(ownerToday_(book, cfg, now), { ok: false, error: 'That check-in was already removed.' });
   l.Status = 'void';
-  io.update('Log', l, { Status: 'void' });
+  l.Note = noteWith_(l.Note, 'removed by ' + str_(who) + ' ' + fmtTime_(now.minutes));
+  io.update('Log', l, { Status: 'void', Note: l.Note });
   return Object.assign(ownerToday_(book, cfg, now), { wrote: true, done: str_(l.Student) + ' is no longer checked in to ' + (str_(l.Class) || 'that class') + '.' });
 }
 
 /** "Check someone in" on the owner page: the menu's rules (any class today, Source = owner). */
-function ownerCheckinFromPage_(book, cfg, req, now, io) {
+function ownerCheckinFromPage_(book, cfg, req, now, io, who) {
   let email = cleanEmail_(req.email);
   if (str_(req.studentId)) {
     const s = studentById_(book, req.studentId);
@@ -1025,7 +1044,7 @@ function ownerCheckinFromPage_(book, cfg, req, now, io) {
   }
   const ids = [].concat(req.classIds || []).map(str_).filter(Boolean);
   if (!ids.length) return { ok: false, error: 'Pick a class.' };
-  const res = ownerCheckin_(book, { email: email, name: str_(req.name), classIds: ids }, now, io);
+  const res = ownerCheckin_(book, { email: email, name: str_(req.name), classIds: ids }, now, io, who);
   if (!res.ok) return res;
   const done = res.checkins.map(function (c) { return c.name + (c.already ? ' (already in)' : ''); }).join(', ');
   return Object.assign(ownerToday_(book, cfg, now), { wrote: res.status === 'ok',
@@ -1090,8 +1109,8 @@ function passkeySaved_(book, req, io) {
  * at the door). Same rules as the page, except any class today can be picked
  * at any time of day. Only Code.gs calls this; the web API can't reach it.
  */
-function ownerCheckin_(book, req, now, io) {
-  return checkin_(book, configFrom_(book.config), req, now, io, { anyTimeToday: true, source: 'owner' });
+function ownerCheckin_(book, req, now, io, by) {
+  return checkin_(book, configFrom_(book.config), req, now, io, { anyTimeToday: true, source: 'owner', by: str_(by) });
 }
 
 /** Every class on today, earliest first. */
@@ -1222,7 +1241,7 @@ function checkin_(book, cfg, req, now, io, opts) {
     const row = {
       CheckinID: io.newId('C'), When: now.stamp, ClassDate: now.date,
       StudentID: sid, Student: str_(student.Name), ClassID: c.id, Class: c.name,
-      Price: c.price, Source: source, Status: 'ok', Note: '',
+      Price: c.price, Source: source, Status: 'ok', Note: '', By: opts.by || '',
     };
     book.log.push(row);
     io.append('Log', row);

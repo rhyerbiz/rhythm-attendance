@@ -1060,7 +1060,7 @@ test('owner page: an "I\'m here for a class" visit is matched to a class, or rem
   const sam = owner(book, { op: 'today' }).extras[0];
   const io = ownerIo();
   const res = owner(book, { op: 'sortOut', checkinId: sam.id, classId: 'K2' }, null, io);
-  same(io.updated.map(([t, , f]) => [t, f]), [['Log', { ClassID: 'K2', Class: 'Bachata 2', Status: 'ok' }]]);
+  same(io.updated.map(([t, , f]) => [t, f]), [['Log', { ClassID: 'K2', Class: 'Bachata 2', Status: 'ok', Note: 'Tango makeup · matched by Owner Mon Nov 2' }]]);
   same(res.extras, []);
   same(res.classes[1].people.map((p) => [p.name, p.how]), [['Sam Park', 'drop-in $20']]);
   // Typed name, for a class not on that day's schedule; and removal.
@@ -1124,12 +1124,37 @@ test('owner page: Remove undoes one of today\'s check-ins, and only today\'s', (
   const jess = owner(book, { op: 'today' }).classes[0].people[0];
   const io = ownerIo();
   const res = owner(book, { op: 'undo', checkinId: jess.checkinId }, null, io);
-  same(io.updated.map(([t, , f]) => [t, f]), [['Log', { Status: 'void' }]]);
+  same(io.updated.map(([t, , f]) => [t, f]), [['Log', { Status: 'void', Note: 'removed by Owner 7:10pm' }]]);
   assert.strictEqual(res.done, 'Jess Lee is no longer checked in to Salsa 1.');
   same(res.classes[0].people, []);
   assert.strictEqual(owner(book, { op: 'undo', checkinId: jess.checkinId }).ok, false); // already removed
   const old = book.log.find((l) => l.ClassDate === '2026-10-28').CheckinID;
   assert.strictEqual(owner(book, { op: 'undo', checkinId: old }).ok, false); // not today's
+});
+
+test('owner page: each link has a name, and the Log says who checked someone in', () => {
+  const book = ownerBook();
+  const keys = { Caress: 'caresskeycaresskeycaress', Rob: 'robkeyrobkeyrobkeyrobkey' };
+  const io = () => { const x = ownerIo(); delete x.ownerKey; x.ownerKeys = () => keys; return x; };
+  const as = (key, req, now) => fn('handleRequest_')(book, Object.assign({ action: 'owner', key }, req), now || at(MON, '19:10'), io());
+  // Sam taps in himself: By stays blank.
+  checkin(book, at(MON, '18:55'), { email: 'sam@example.com', classIds: ['K1'] });
+  // Rob checks Jess into Bachata from his own link; Caress removes Sam.
+  as(keys.Rob, { op: 'checkin', studentId: jessId(book), classIds: ['K2'] });
+  const sam = as(keys.Caress, { op: 'today' }).classes[0].people.find((p) => p.name === 'Sam Park');
+  as(keys.Caress, { op: 'undo', checkinId: sam.checkinId });
+  const row = (cls, who) => book.log.find((l) => l.ClassID === cls && l.Student === who);
+  assert.strictEqual(row('K1', 'Jess Lee').By, '');          // tapped in herself (ownerBook)
+  assert.strictEqual(row('K2', 'Jess Lee').By, 'Rob');
+  assert.strictEqual(row('K1', 'Sam Park').Note, 'removed by Caress 7:10pm');
+  same(as(keys.Caress, { op: 'today' }).classes[1].people.map((p) => [p.name, p.by]), [['Jess Lee', 'Rob']]);
+  // Plans and passes say whose link made them; a key not in the list gets nothing.
+  as(keys.Caress, { op: 'addPass', studentId: jessId(book), classes: 5 });
+  assert.strictEqual(book.packages[0].Note, 'Owner page (Caress)');
+  assert.strictEqual(as('nobodykeynobodykeynobody', { op: 'today' }).status, 'needKey');
+  // The Sheet menu passes the user's email the same way.
+  fn('ownerCheckin_')(book, { email: 'sam@example.com', classIds: ['K2'] }, at(MON, '19:20'), makeIo(), 'rob@example.com');
+  assert.strictEqual(row('K2', 'Sam Park').By, 'rob@example.com');
 });
 
 // The page's own scripts aren't run here, but a syntax error in one blanks the live page.
