@@ -63,7 +63,7 @@
     document.getElementById('studio').textContent = name;
     document.title = name;
   }
-  function noteHtml(msg, bad) { return msg ? '<p class="' + (bad ? 'error' : 'done') + '" role="status">' + esc(msg) + '</p>' : ''; }
+  function noteHtml(msg, bad) { return msg ? '<p class="' + (bad ? 'error' : 'flash') + '" role="status">' + esc(msg) + '</p>' : ''; }
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
 
   // ---------------------------------------------------------------- state
@@ -139,7 +139,9 @@
     return '<ul class="people">' + people.map(function (p) {
       var owes = p.owes && !shown[p.name];
       shown[p.name] = true;
-      return '<li><span>' + esc(p.name) + '</span><span class="how">' + esc(p.how) +
+      return '<li><span>' + esc(p.name) +
+          '<button class="linkish remove" type="button" data-undo="' + esc(p.checkinId) + '" data-who="' + esc(p.name) + '">remove</button></span>' +
+        '<span class="how">' + esc(p.how) +
         (owes ? '<span class="owes">owes ' + esc(p.owes) + ' in all</span>' : '') + '</span></li>';
     }).join('') + '</ul>';
   }
@@ -156,7 +158,8 @@
       (d.classes.length || d.other.length ? '' : '<div class="card center"><p class="muted">No classes today.</p></div>') +
       d.classes.map(function (c) {
         return '<section class="card slim"><h2>' + esc(c.time) + ' · ' + esc(c.name) +
-          '<span class="n">' + c.people.length + '</span></h2>' + peopleHtml(c.people, shown) + '</section>';
+          '<span class="n">' + c.people.length + '</span></h2>' + peopleHtml(c.people, shown) +
+          '<button class="btn secondary" type="button" data-roster="' + esc(c.id) + '">Take attendance</button></section>';
       }).join('') +
       d.other.map(function (c) {
         return '<section class="card slim"><h2>' + esc(c.name) + '<span class="n">' + c.people.length + '</span></h2>' + peopleHtml(c.people, shown) + '</section>';
@@ -166,6 +169,79 @@
     on('#refresh', 'click', function () { show('today'); });
     on('#checkin', 'click', viewCheckin);
     on('#goextras', 'click', function () { setTab('extras'); draw(); });
+    all('[data-roster]').forEach(function (b) {
+      b.addEventListener('click', function () { viewRoster(b.getAttribute('data-roster')); });
+    });
+    all('[data-undo]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var li = b.closest('section').querySelector('h2').firstChild.textContent;
+        if (!confirm('Remove ' + b.getAttribute('data-who') + ' from ' + li.replace(/^.* · /, '') + '? It won\'t count as a class.')) return;
+        b.disabled = true;
+        b.textContent = 'removing…';
+        api('undo', { checkinId: b.getAttribute('data-undo') }).then(function (res) { state.students = null; after(res); })
+          .catch(function () { alert('Couldn\'t reach the studio\'s records. Nothing was changed. Please try again.'); draw(); });
+      });
+    });
+  }
+
+  // The attendance checklist for one class: its usual students first, then everyone else.
+  function viewRoster(classId) {
+    if (!state.students) {
+      busy();
+      return api('students').then(function (res) { if (handled(res)) { state.students = res; viewRoster(classId); } })
+        .catch(function () { viewError('Couldn\'t reach the studio\'s records.', function () { viewRoster(classId); }); });
+    }
+    var c = state.today.classes.filter(function (x) { return x.id === classId; })[0];
+    if (!c) return draw();
+    var inClass = {};
+    c.people.forEach(function (p) { inClass[p.studentId] = true; });
+    var byId = {};
+    state.students.students.forEach(function (s) { byId[s.id] = s; });
+    var usual = c.usual.filter(function (id) { return byId[id]; }).map(function (id) { return byId[id]; });
+    var isUsual = {};
+    usual.forEach(function (s) { isUsual[s.id] = true; });
+    var rest = state.students.students.filter(function (s) { return !isUsual[s.id]; });
+    var row = function (s) {
+      var here = inClass[s.id];
+      return '<label class="pick' + (here ? ' done' : '') + '" data-name="' + esc((s.name + ' ' + s.email).toLowerCase()) + '">' +
+        '<input type="checkbox" value="' + esc(s.id) + '"' + (here ? ' checked disabled' : '') + '>' +
+        '<span class="pname">' + esc(s.name) + '</span>' + (here ? '<span class="time">in</span>' : '') + '</label>';
+    };
+    render('<p><button class="linkish" id="back" type="button">‹ Today</button></p>' +
+      '<div class="headline"><h1>' + esc(c.name) + '</h1><p class="muted small">' + esc(c.time) + ' · tick who\'s here</p></div>' +
+      '<input id="rfind" type="search" autocomplete="off" placeholder="Find a name">' +
+      (usual.length ? '<p class="group">Usually in this class</p>' + usual.map(row).join('') : '') +
+      (rest.length ? '<p class="group">' + (usual.length ? 'Everyone else' : 'Students') + '</p>' + rest.map(row).join('') : '') +
+      (!usual.length && !rest.length ? '<p class="muted">No students yet. Use "Check someone in" for someone new.</p>' : '') +
+      '<p class="muted small" style="margin-top:12px">Someone new? Use "Check someone in" on Today, with their email.</p>' +
+      '<div class="stickybar"><button class="btn" id="rgo" type="button" disabled>Check in</button></div>');
+    var go = app.querySelector('#rgo');
+    var count = function () {
+      var n = all('.pick input:checked:not(:disabled)').length;
+      go.disabled = !n;
+      go.textContent = n ? 'Check in ' + n : 'Check in';
+    };
+    all('.pick input').forEach(function (i) { i.addEventListener('change', count); });
+    app.querySelector('#rfind').addEventListener('input', function (e) {
+      var q = e.target.value.trim().toLowerCase();
+      all('.pick').forEach(function (l) { l.hidden = !!q && l.getAttribute('data-name').indexOf(q) < 0; });
+    });
+    on('#back', 'click', function () { draw(); });
+    go.addEventListener('click', function () {
+      var ids = all('.pick input:checked:not(:disabled)').map(function (i) { return i.value; });
+      go.disabled = true;
+      go.textContent = 'Checking in…';
+      api('checkinMany', { classId: classId, studentIds: ids }).then(function (res) {
+        if (res.ok) { state.students = null; after(res); return; }
+        if (res.status === 'needKey') return viewNeedKey();
+        alert(res.error || 'That didn\'t work.');
+        count();
+      }).catch(function () {
+        // Safe to tap again: anyone already checked in comes back as already in.
+        alert('Couldn\'t reach the studio\'s records. Please try again.');
+        count();
+      });
+    });
   }
 
   function studentLine(s) {

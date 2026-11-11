@@ -1021,7 +1021,7 @@ test('owner page: a monthly plan covers check-ins from its start date, and repla
   assert.strictEqual(res.wrote, true);
   same(io.appended.map(([t, r]) => [t, r.Student, r.Plan, r.Start, r.End]), [['Plans', 'jess@example.com', 'Monthly, 1 class a week', '2026-11-01', '']]);
   // Today's check-in is now covered, with nothing owed.
-  same(owner(book, { op: 'today' }).classes[0].people, [{ name: 'Jess Lee', how: 'plan', owes: '' }]);
+  same(owner(book, { op: 'today' }).classes[0].people.map((p) => [p.name, p.how, p.owes]), [['Jess Lee', 'plan', '']]);
   // Moving to 2 classes a week from the 15th ends the first plan on the 14th.
   const io2 = ownerIo();
   owner(book, { op: 'startPlan', studentId: jessId(book), plan: 'Monthly, 2 classes a week', start: '2026-11-15' }, null, io2);
@@ -1092,6 +1092,44 @@ test('owner page: check someone in to any class today, by student or as someone 
   const fresh = owner(book, { op: 'checkin', email: 'new@example.com', name: 'Nia Lowe', classIds: ['K1'] }, at(MON, '12:00'));
   assert.strictEqual(fresh.done, 'Nia Lowe: Salsa 1.');
   assert.strictEqual(owner(book, { op: 'checkin', email: 'x@example.com', classIds: ['K1'] }).ok, false); // new needs a name
+});
+
+test('owner page: the attendance checklist lists a class\'s usual students first, and checks in several at once', () => {
+  const book = makeBook();
+  const WED = '2026-10-28', MON2 = '2026-10-26';
+  // Salsa 1 regulars: Ana twice, Ben once; Cy only ever came to Bachata.
+  checkin(book, at(MON2, '18:50'), { email: 'ana@example.com', name: 'Ana Ruiz', classIds: ['K1'] });
+  checkin(book, at(WED, '18:50'), { email: 'ana@example.com', classIds: ['K1'] });
+  checkin(book, at(WED, '18:51'), { email: 'ben@example.com', name: 'Ben Cho', classIds: ['K1'] });
+  checkin(book, at(MON2, '19:50'), { email: 'cy@example.com', name: 'Cy Moss', classIds: ['K2'] });
+  const id = (e) => book.students.find((s) => s.Email === e).StudentID;
+  const today = owner(book, { op: 'today' }, at(MON, '18:30'));
+  same(today.classes.find((c) => c.id === 'K1').usual, [id('ana@example.com'), id('ben@example.com')]);
+  same(today.classes.find((c) => c.id === 'K2').usual, [id('cy@example.com')]);
+  // Ben taps in himself; then the owner ticks Ana and Ben.
+  checkin(book, at(MON, '18:50'), { email: 'ben@example.com', classIds: ['K1'] });
+  const res = owner(book, { op: 'checkinMany', classId: 'K1', studentIds: [id('ana@example.com'), id('ben@example.com')] }, at(MON, '19:05'));
+  assert.strictEqual(res.done, 'Checked in 1: Ana. Already in: Ben.');
+  assert.strictEqual(res.wrote, true);
+  same(res.classes.find((c) => c.id === 'K1').people.map((p) => p.name).sort(), ['Ana Ruiz', 'Ben Cho']);
+  assert.strictEqual(book.log.filter((l) => l.ClassDate === MON && l.Student === 'Ana Ruiz')[0].Source, 'owner');
+  // Only a class on today's schedule, and only known students.
+  assert.strictEqual(owner(book, { op: 'checkinMany', classId: 'K3', studentIds: [id('cy@example.com')] }, at(MON, '19:05')).ok, false);
+  assert.strictEqual(owner(book, { op: 'checkinMany', classId: 'K1', studentIds: ['nobody'] }, at(MON, '19:05')).done, 'Nobody new to check in.');
+});
+
+test('owner page: Remove undoes one of today\'s check-ins, and only today\'s', () => {
+  const book = ownerBook();
+  checkin(book, at('2026-10-28', '18:50'), { classIds: ['K1'] }); // Jess, last Wednesday
+  const jess = owner(book, { op: 'today' }).classes[0].people[0];
+  const io = ownerIo();
+  const res = owner(book, { op: 'undo', checkinId: jess.checkinId }, null, io);
+  same(io.updated.map(([t, , f]) => [t, f]), [['Log', { Status: 'void' }]]);
+  assert.strictEqual(res.done, 'Jess Lee is no longer checked in to Salsa 1.');
+  same(res.classes[0].people, []);
+  assert.strictEqual(owner(book, { op: 'undo', checkinId: jess.checkinId }).ok, false); // already removed
+  const old = book.log.find((l) => l.ClassDate === '2026-10-28').CheckinID;
+  assert.strictEqual(owner(book, { op: 'undo', checkinId: old }).ok, false); // not today's
 });
 
 // The page's own scripts aren't run here, but a syntax error in one blanks the live page.

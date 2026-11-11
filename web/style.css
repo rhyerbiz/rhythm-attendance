@@ -241,7 +241,12 @@ select {
   border: 1.5px solid var(--line); background: var(--bg); color: var(--ink);
 }
 input + input, select + input { margin-top: 8px; }
-.done { background: var(--ok-soft); color: var(--ink); border-radius: 12px; padding: 10px 12px; font-size: 15px; margin: 6px 0 10px; }
+.people .remove { font-size: 12px; margin-left: 6px; padding: 2px 4px; vertical-align: 1px; }
+.owner .group { margin: 16px 0 0; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.owner .pick[hidden] { display: none; }
+.stickybar { position: sticky; bottom: 0; padding: 8px 0 calc(8px + env(safe-area-inset-bottom)); background: var(--bg); }
+.stickybar .btn { margin-top: 0; }
+.flash { background: var(--ok-soft); color: var(--ink); border-radius: 12px; padding: 10px 12px; font-size: 15px; margin: 6px 0 10px; }
 .owner .error { margin: 6px 0 10px; }
 
 /* Preview-mode toolbar (mock.js only) */

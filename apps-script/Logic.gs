@@ -801,6 +801,8 @@ function ownerRequest_(book, cfg, req, now, io) {
   if (op === 'addPass') return ownerAddPass_(book, cfg, req, now, io);
   if (op === 'sortOut') return ownerSortOut_(book, cfg, req, now, io);
   if (op === 'checkin') return ownerCheckinFromPage_(book, cfg, req, now, io);
+  if (op === 'checkinMany') return ownerCheckinMany_(book, cfg, req, now, io);
+  if (op === 'undo') return ownerUndo_(book, cfg, req, now, io);
   return { ok: false, error: 'Unknown request.' };
 }
 
@@ -813,16 +815,27 @@ function ownerToday_(book, cfg, now) {
     const led = ledger(str_(l.StudentID));
     const item = led.items.filter(function (i) { return i.id === str_(l.CheckinID); })[0];
     return {
-      name: str_(l.Student),
+      name: str_(l.Student), studentId: str_(l.StudentID), checkinId: str_(l.CheckinID),
       how: item ? COVERED_LABELS[item.covered] + (item.covered === 'dropin' ? ' ' + money_(item.price) : '') : '',
       owes: led.owed > 0 ? money_(led.owed) : '', // shown for information only
     };
+  };
+  // Who usually comes to each class (by name: a Wix class has a new ClassID every session), over
+  // the last six weeks, most often first. The attendance checklist lists them first.
+  const since = addDays_(now.date, -42);
+  const usualFor = function (name) {
+    const n = {};
+    liveLog_(book).forEach(function (l) {
+      const d = dayStr_(l.ClassDate);
+      if (d >= since && d < now.date && str_(l.Class) === name) n[str_(l.StudentID)] = (n[str_(l.StudentID)] || 0) + 1;
+    });
+    return Object.keys(n).sort(function (a, b) { return n[b] - n[a]; });
   };
   const seen = {};
   const classes = allClassesToday_(book, now.date).map(function (c) {
     const mine = log.filter(function (l) { return str_(l.ClassID) === c.id; });
     mine.forEach(function (l) { seen[str_(l.CheckinID)] = true; });
-    return { id: c.id, name: c.name, time: fmtTime_(c.start), people: mine.map(person) };
+    return { id: c.id, name: c.name, time: fmtTime_(c.start), people: mine.map(person), usual: usualFor(c.name) };
   });
   const other = {};
   log.filter(function (l) { return !seen[str_(l.CheckinID)]; }).forEach(function (l) {
@@ -968,6 +981,38 @@ function ownerSortOut_(book, cfg, req, now, io) {
   io.update('Log', l, fields);
   return Object.assign(ownerToday_(book, cfg, now), { wrote: true,
     done: req.remove ? 'Removed.' : str_(l.Student) + ' is checked in to ' + fields.Class + '.' });
+}
+
+/**
+ * The attendance checklist: several known students into one class today. Someone already in
+ * comes back as already, so a double tap or a retry is harmless.
+ */
+function ownerCheckinMany_(book, cfg, req, now, io) {
+  const classId = str_(req.classId);
+  if (!allClassesToday_(book, now.date).some(function (c) { return c.id === classId; })) return { ok: false, error: 'That class isn\'t on today\'s schedule.' };
+  const ids = [].concat(req.studentIds || []).map(str_).filter(Boolean);
+  if (!ids.length) return { ok: false, error: 'Tick someone first.' };
+  if (ids.length > 100) return { ok: false, error: 'That\'s too many at once.' };
+  const added = [], already = [];
+  ids.forEach(function (id) {
+    const s = studentById_(book, id);
+    if (!s || !cleanEmail_(s.Email)) return;
+    const res = ownerCheckin_(book, { email: cleanEmail_(s.Email), classIds: [classId] }, now, io);
+    if (!res.ok) return;
+    (res.status === 'ok' ? added : already).push(str_(s.Name).split(' ')[0]);
+  });
+  return Object.assign(ownerToday_(book, cfg, now), { wrote: added.length > 0,
+    done: (added.length ? 'Checked in ' + added.length + ': ' + added.join(', ') + '.' : 'Nobody new to check in.') +
+      (already.length ? ' Already in: ' + already.join(', ') + '.' : '') });
+}
+
+/** Removes one of today's check-ins (a mistaken tick): Status = void, like every delete here. */
+function ownerUndo_(book, cfg, req, now, io) {
+  const l = liveLog_(book).filter(function (x) { return str_(x.CheckinID) === str_(req.checkinId) && dayStr_(x.ClassDate) === now.date; })[0];
+  if (!l) return Object.assign(ownerToday_(book, cfg, now), { ok: false, error: 'That check-in was already removed.' });
+  l.Status = 'void';
+  io.update('Log', l, { Status: 'void' });
+  return Object.assign(ownerToday_(book, cfg, now), { wrote: true, done: str_(l.Student) + ' is no longer checked in to ' + (str_(l.Class) || 'that class') + '.' });
 }
 
 /** "Check someone in" on the owner page: the menu's rules (any class today, Source = owner). */
