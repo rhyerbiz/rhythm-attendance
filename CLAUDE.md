@@ -55,6 +55,7 @@ apps-script/Wix.gs       read-only Wix client (allow-listed calls) + "Test the W
 apps-script/appsscript.json
 web/                     the check-in page, published to GitHub Pages (static, no build)
   index.html, style.css, app.js, config.js (dev + prod host/apiUrl; studioName is a fallback)
+  owner.html, owner.js   the owner's phone page (rule 11i)
   logo.png               the studio's logo, copied from rhythmdw.com; style.css follows that site's teal and type
   mock.js                preview-mode backend: runs Logic.gs in the browser
 scripts/test_logic.js    Node tests for Logic.gs
@@ -156,6 +157,14 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     (Apps Script can't verify P-256): a passkey is worth exactly what an email is worth. WebAuthn
     calls run straight from a tap (Safari needs the user gesture), and every failure falls back
     to the email box. rpId = the page's hostname, so dev and prod passkeys are separate.
+11i. **Owner page** (`owner.html`, `ownerRequest_`): Today, check someone in, monthly plans
+    (`PLAN_CHOICES`), class passes, and sorting out "I'm here for a class" visits, so the owner
+    never edits the Sheet. Every request carries the owner key, checked first (`ownerKeyOk_`
+    against Script Properties `ownerKey`, which the menu's "Make the owner page link" makes; a
+    new link revokes the old one). The key travels in the link's `#k=` fragment, is kept in the
+    phone's localStorage, and is never in the Sheet or the repo. **No money on purpose:**
+    payments and prices wait until the owner has said what she wants. A Google sign-in is planned
+    to replace the link when prod is set up.
 12. **The Sheet's `studioName` wins.** The page remembers the last name the API sent;
     `config.js` only covers a phone's first visit.
 13. **Backups:** `backupNow` (nightly trigger) copies the SCHEMA tabs — values only, no script —

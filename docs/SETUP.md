@@ -165,7 +165,34 @@ running without you. Repeat steps 1–4, with these differences:
 Your dev copy stays as it is, for trying out changes before they reach the studio. Testing with
 fellow students uses its test links: see [TESTING.md](TESTING.md).
 
+## The owner page
+
+So the owner never has to edit the Sheet, `owner.html` (next to the check-in page) does the
+everyday jobs from her phone:
+- **Today:** each class with who's in and how it's covered (plan, class pass, drop-in). "Owes" is
+  shown for information only.
+- **Check someone in.**
+- **Students:** start, change or end a monthly plan (a start date in the past covers the
+  check-ins since then), and add a class pass.
+- **To sort out:** match an "I'm here for a class" visit to its class, or remove it.
+
+It doesn't handle money on purpose: payments and prices stay in the Sheet until that's decided
+with the owner.
+
+**Giving her the link:** in the Sheet, choose **Check-in → Make the owner page link**, and send her
+the address it shows (`…/owner.html#k=…`). She opens it once on her phone, and from then on it
+remembers her; she can add it to her home screen.
+- The key after `#k=` lives only in Script Properties (`ownerKey`), never in the Sheet or the repo.
+- Running the menu item again makes a new link and stops the old one working. Do that if a phone
+  is lost or the link went to the wrong person.
+- Anyone with the link can see student names and emails and change plans, so treat it like a
+  password.
+- At handover, make a new link in the studio's copy. (A Google sign-in instead of the link is
+  planned for then.)
+
 ## Day to day, for the owner
+
+Most of this is on [the owner page](#the-owner-page); the Sheet does the rest.
 
 | To… | Do this |
 |---|---|
