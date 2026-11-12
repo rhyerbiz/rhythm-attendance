@@ -1167,6 +1167,63 @@ test('owner page: each link has a name, and the Log says who checked someone in'
   assert.strictEqual(row('K2', 'Sam Park').By, 'rob@example.com');
 });
 
+test('studio page: a teacher link does check-ins only, and an admin makes and turns off teacher links', () => {
+  const book = ownerBook();
+  const admins = { Caress: 'caresskeycaresskeycaress' };
+  let teachers = {};
+  let n = 0;
+  const io = () => {
+    const x = ownerIo(); delete x.ownerKey;
+    x.ownerKeys = () => admins;
+    x.teacherKeys = () => JSON.parse(JSON.stringify(teachers));
+    x.saveTeacherKeys = (k) => { teachers = k; };
+    x.newKey = () => 'teacherkey' + String(++n).padStart(14, 'x');
+    return x;
+  };
+  const as = (key, req) => fn('handleRequest_')(book, Object.assign({ action: 'owner', key }, req), at(MON, '19:10'), io());
+  // Caress makes Dee's link; the key comes back once, the team list never shows keys.
+  const made = as(admins.Caress, { op: 'addTeacher', name: '  Dee   Ray ' });
+  assert.strictEqual(made.ok, true);
+  assert.strictEqual(made.name, 'Dee Ray');
+  same([made.admins, made.teachers, made.role, made.who], [['Caress'], ['Dee Ray'], 'admin', 'Caress']);
+  const dee = made.newKey;
+  assert.strictEqual(teachers['Dee Ray'], dee);
+  assert.strictEqual(JSON.stringify(as(admins.Caress, { op: 'team' })).indexOf(dee), -1);
+  // Names: taken, an admin's, or not starting with a letter (it would be a formula in the Sheet).
+  assert.strictEqual(as(admins.Caress, { op: 'addTeacher', name: 'dee ray' }).ok, false);
+  assert.strictEqual(as(admins.Caress, { op: 'addTeacher', name: 'caress' }).ok, false);
+  assert.strictEqual(as(admins.Caress, { op: 'addTeacher', name: '=HYPERLINK(1)' }).ok, false);
+  // Dee sees who's in, but not how they paid, what they owe, emails, plans or visits to sort out.
+  const today = as(dee, { op: 'today' });
+  same([today.ok, today.role, today.who], [true, 'teacher', 'Dee Ray']);
+  same(today.classes[0].people.map((p) => [p.name, p.how, p.owes]), [['Jess Lee', '', '']]);
+  same(today.extras, []);
+  const list = as(dee, { op: 'students' });
+  assert.ok(list.students.length);
+  list.students.forEach((s) => same(Object.keys(s).sort(), ['id', 'name']));
+  // She can take attendance and remove a check-in; the Log says it was her.
+  const sam = book.students.find((s) => s.Email === 'sam@example.com').StudentID;
+  assert.strictEqual(as(dee, { op: 'checkinMany', classId: 'K2', studentIds: [sam] }).ok, true);
+  const row = book.log.find((l) => l.ClassID === 'K2' && l.Student === 'Sam Park');
+  assert.strictEqual(row.By, 'Dee Ray');
+  assert.strictEqual(as(dee, { op: 'undo', checkinId: row.CheckinID }).ok, true);
+  // Nothing else, and the server refuses it whatever the page shows.
+  for (const op of ['startPlan', 'endPlan', 'addPass', 'sortOut', 'team', 'addTeacher', 'removeTeacher']) {
+    const res = as(dee, { op, studentId: jessId(book), plan: 'Monthly, 1 class a week', classes: 5, name: 'Dee Ray', remove: true });
+    assert.strictEqual(res.ok, false, op);
+    assert.strictEqual(res.error, 'Only an admin can do that.', op);
+  }
+  same([(book.plans || []).length, (book.packages || []).length, Object.keys(teachers)], [0, 0, ['Dee Ray']]);
+  // A new link replaces the old one; turning it off stops it.
+  const again = as(admins.Caress, { op: 'addTeacher', name: 'Dee Ray', replace: true });
+  assert.notStrictEqual(again.newKey, dee);
+  assert.strictEqual(as(dee, { op: 'today' }).status, 'needKey');
+  assert.strictEqual(as(again.newKey, { op: 'today' }).role, 'teacher');
+  same(as(admins.Caress, { op: 'removeTeacher', name: 'Dee Ray' }).teachers, []);
+  assert.strictEqual(as(again.newKey, { op: 'today' }).status, 'needKey');
+  assert.strictEqual(as(admins.Caress, { op: 'removeTeacher', name: 'Dee Ray' }).ok, false);
+});
+
 // The page's own scripts aren't run here, but a syntax error in one blanks the live page.
 test('the check-in page scripts parse', () => {
   for (const f of ['web/app.js', 'web/owner.js', 'web/mock.js', 'web/config.js', 'apps-script/Code.gs', 'apps-script/Wix.gs']) {

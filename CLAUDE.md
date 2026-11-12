@@ -166,9 +166,14 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     check-ins only), take attendance (`ownerCheckinMany_`; each class's `usual` students, by class
     name over six weeks, are listed first; "Someone new?" adds a first-timer by email + name), monthly plans
     (`PLAN_CHOICES`), class passes, and sorting out "I'm here for a class" visits, so the owner
-    never edits the Sheet. Every request carries a named link's key, checked first (`ownerWho_`
-    against Script Properties `ownerKeys` = {name: key}, made per person by the menu's "Make an
-    owner page link…"; the pre-names `ownerKey` counts as "Owner"). The name goes into Log → `By`
+    never edits the Sheet. Every request carries a named link's key, checked first (`staffWho_`).
+    Two roles: **admin** (Script Properties `ownerKeys` = {name: key}, made per person by the
+    menu's "Make an admin link for the studio page…"; the pre-names `ownerKey` counts as "Owner")
+    and **teacher** (`teacherKeys`, made, renewed and turned off by an admin on the page's Team tab:
+    `addTeacher_`/`removeTeacher_`; the new key is returned once). A teacher may only use
+    `TEACHER_OPS` (today, students, check-ins, remove), refused server-side otherwise, and
+    `teacherView_` strips how-covered/owes/emails/plans/extras from their answers. Code and the file
+    keep the "owner" names so links already handed out keep working. The name goes into Log → `By`
     on each check-in they make (blank = the student themselves; the Sheet menu writes the user's
     email), and into Note on removals and sort-outs. The key travels in the link's `#k=` fragment,
     is kept in the phone's localStorage, and is never in the Sheet or the repo. **No money on purpose:**

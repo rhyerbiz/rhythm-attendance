@@ -78,6 +78,14 @@ window.MockBackend = (function () {
       append: function () { /* rows are already in book */ },
       update: function () { /* the row in book was already changed */ },
       ownerKey: function () { return 'previewownerkeypreviewowner'; }, // owner.js uses the same in preview
+      // Teacher links made on the Team tab, kept on this computer. Open owner.html#k=<key> to be one.
+      teacherKeys: function () {
+        try { return JSON.parse(localStorage.getItem(KEY + '.teachers') || '{}') || {}; } catch (e) { return {}; }
+      },
+      saveTeacherKeys: function (keys) {
+        try { localStorage.setItem(KEY + '.teachers', JSON.stringify(keys)); } catch (e) { /* preview only */ }
+      },
+      newKey: function () { var k = ''; while (k.length < 24) k += Math.random().toString(36).replace(/[^a-z]/g, ''); return k.slice(0, 24); },
     };
     var res = handleRequest_(book, JSON.parse(JSON.stringify(req)), nowParts(), io);
     save(book);

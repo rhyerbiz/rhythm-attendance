@@ -1,7 +1,9 @@
-// The owner's page: today's classes, students' monthly plans and class passes, and the
-// "I'm here for a class" visits to sort out, so the owner never has to edit the Sheet.
-// Opened from a private link (owner.html#k=…) made by the Sheet's menu; the key is kept on the
-// phone and sent with every request. Deliberately nothing about money yet (payments, prices).
+// The studio page for admins and teachers: today's classes, students' monthly plans and class
+// passes, and the "I'm here for a class" visits to sort out, so nobody has to edit the Sheet.
+// Opened from a private link (owner.html#k=…): admin links are made by the Sheet's menu, teacher
+// links by an admin on the Team tab. The key is kept on the phone and sent with every request.
+// A teacher sees only Today and Take attendance; the server enforces that, this only lays it out.
+// Deliberately nothing about money yet (payments, prices).
 (function () {
   'use strict';
 
@@ -30,8 +32,9 @@
       try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* fine */ }
       return m[1];
     }
-    if (MOCK) return MOCK_KEY;
-    try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; }
+    var kept = '';
+    try { kept = localStorage.getItem(KEY_STORE) || ''; } catch (e) { /* none */ }
+    return kept || (MOCK ? MOCK_KEY : ''); // the preview is an admin until a teacher's link is opened
   })();
 
   // ------------------------------------------------------------------ api
@@ -74,11 +77,20 @@
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
 
   // ---------------------------------------------------------------- state
-  var state = { tab: 'today', today: null, students: null, filter: '', top: false };
+  var state = { tab: 'today', today: null, students: null, team: null, filter: '', top: false, role: '', who: '', newLink: null };
+
+  // The tabs this link may use, once the first answer has said which kind of link it is.
+  // A teacher has only Today, so no tab bar at all.
+  function setRole(res) {
+    if (!res || !res.role) return;
+    state.role = res.role;
+    state.who = res.who || '';
+    tabs.hidden = state.role !== 'admin';
+  }
 
   function setTab(tab) {
+    if (tab !== 'team') state.newLink = null; // a new teacher's link is shown once
     state.tab = tab;
-    tabs.hidden = false;
     Array.prototype.forEach.call(tabs.querySelectorAll('button'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-tab') === tab);
       if (b.getAttribute('data-tab') === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
@@ -93,12 +105,13 @@
 
   // Shows a tab: at once from what's already loaded, then refreshed from the server. The
   // refresh is redrawn only if she's still on that tab's main view and isn't typing.
+  function needFor(tab) { return tab === 'students' || tab === 'team' ? tab : 'today'; }
   function show(tab, msg, bad) {
     setTab(tab);
-    var need = tab === 'students' ? 'students' : 'today';
+    var need = needFor(tab);
     var had = !!state[need];
     if (had) draw(msg, bad); else busy();
-    var load = need === 'students' ? loadStudents(true) : api('today');
+    var load = need === 'students' ? loadStudents(true) : api(need);
     load.then(function (res) {
       if (had) {
         if (!res || !res.ok) return; // keep what's on screen
@@ -149,15 +162,17 @@
   // A refused key or a server error; true when the answer can be shown.
   function handled(res) {
     setStudio(res && res.studio);
+    setRole(res);
     if (res && res.status === 'needKey') { viewNeedKey(); return false; }
-    if (res && !res.ok && !res.classes && !res.students) { draw(res.error || 'That didn\'t work.', true); return false; }
+    if (res && !res.ok && !res.classes && !res.students && !res.teachers) { draw(res.error || 'That didn\'t work.', true); return false; }
     return true;
   }
 
   function draw(msg, bad) {
-    var need = state.tab === 'students' ? 'students' : 'today';
+    var need = needFor(state.tab);
     if (!state[need]) return viewError(msg || 'That didn\'t load.', function () { show(state.tab); });
     if (state.tab === 'students') viewStudents(msg, bad);
+    else if (state.tab === 'team') viewTeam(msg, bad);
     else if (state.tab === 'extras') viewExtras(msg, bad);
     else viewToday(msg, bad);
     state.top = true; // a tab's main view: a background refresh may redraw it
@@ -166,8 +181,8 @@
   // ---------------------------------------------------------------- views
   function viewNeedKey() {
     tabs.hidden = true;
-    render('<div class="card center"><h1>Owner page</h1>' +
-      '<p>This phone doesn\'t have a working owner link. Please open the link you were sent again, or ask for a new one.</p></div>');
+    render('<div class="card center"><h1>Studio page</h1>' +
+      '<p>This phone doesn\'t have a working link. Please open the link you were sent again, or ask for a new one.</p></div>');
   }
 
   function viewError(msg, retry) {
@@ -184,8 +199,8 @@
       return '<li><span>' + esc(p.name) +
           '<button class="linkish remove" type="button" data-undo="' + esc(p.checkinId) + '" data-who="' + esc(p.name) + '">remove</button>' +
           (p.by ? '<span class="by">checked in by ' + esc(p.by) + '</span>' : '') + '</span>' +
-        '<span class="how">' + esc(p.how) +
-        (owes ? '<span class="owes">owes ' + esc(p.owes) + ' in all</span>' : '') + '</span></li>';
+        (p.how || owes ? '<span class="how">' + esc(p.how) +
+          (owes ? '<span class="owes">owes ' + esc(p.owes) + ' in all</span>' : '') + '</span>' : '') + '</li>';
     }).join('') + '</ul>';
   }
 
@@ -207,7 +222,8 @@
         return '<section class="card slim"><h2>' + esc(c.name) + '<span class="n">' + c.people.length + '</span></h2>' + peopleHtml(c.people, shown) + '</section>';
       }).join('') +
       (d.extras.length ? '<button class="btn secondary" id="goextras" type="button">' + plural(d.extras.length, 'visit', 'visits') + ' to sort out</button>' : '') +
-      '<p class="muted small center" style="margin-top:14px">"Owes" is for your information: payments stay in the spreadsheet for now.</p>');
+      (state.role === 'admin' ? '<p class="muted small center" style="margin-top:14px">"Owes" is for your information: payments stay in the spreadsheet for now.</p>' : '') +
+      whoHtml());
     on('#refresh', 'click', function () { show('today'); });
     on('#goextras', 'click', function () { setTab('extras'); draw(); });
     all('[data-roster]').forEach(function (b) {
@@ -244,7 +260,7 @@
     var rest = state.students.students.filter(function (s) { return !isUsual[s.id]; });
     var row = function (s) {
       var here = inClass[s.id];
-      return '<label class="pick' + (here ? ' done' : '') + '" data-name="' + esc((s.name + ' ' + s.email).toLowerCase()) + '">' +
+      return '<label class="pick' + (here ? ' done' : '') + '" data-name="' + esc((s.name + ' ' + (s.email || '')).toLowerCase()) + '">' +
         '<input type="checkbox" value="' + esc(s.id) + '"' + (here ? ' checked disabled' : '') + '>' +
         '<span class="pname">' + esc(s.name) + '</span>' + (here ? '<span class="time">in</span>' : '') + '</label>';
     };
@@ -437,6 +453,78 @@
       sec.querySelector('.remove').addEventListener('click', function (e) {
         if (confirm('Remove this visit? It won\'t count as a class.')) go(e.currentTarget, { remove: true });
       });
+    });
+  }
+
+  function whoHtml() {
+    return state.who ? '<p class="muted small center" style="margin-top:14px">' + esc(state.who) + '\'s ' + state.role + ' link</p>' : '';
+  }
+
+  // Admins only: teachers' links, made and turned off here. A new link is shown once, to send.
+  function viewTeam(msg, bad) {
+    var d = state.team;
+    var nl = state.newLink;
+    render(noteHtml(msg, bad) +
+      (nl ? '<section class="card slim"><h2>' + esc(nl.name) + '\'s link</h2>' +
+        '<input id="nlink" readonly value="' + esc(nl.url) + '">' +
+        '<button class="btn" id="sharelink" type="button">' + (navigator.share ? 'Send it' : 'Copy it') + '</button>' +
+        '<p class="muted small">Send it to ' + esc(nl.name) + ' only, in a text or private message. They open it once on their phone, which remembers it. ' +
+          'It\'s shown only now: if it\'s lost, make them a new link.</p></section>' : '') +
+      '<section class="card slim"><h2>Teachers</h2>' +
+        '<p class="muted small">A teacher\'s link shows today\'s classes, and lets them take attendance and remove a check-in. ' +
+          'It doesn\'t show emails, plans, passes or what anyone owes.</p>' +
+        (d.teachers.length ? '<ul class="people">' + d.teachers.map(function (n) {
+          return '<li><span>' + esc(n) + '</span><span>' +
+            '<button class="linkish" type="button" data-renew="' + esc(n) + '">new link</button> · ' +
+            '<button class="linkish" type="button" data-off="' + esc(n) + '">turn off</button></span></li>';
+        }).join('') + '</ul>' : '<p class="muted small">No teacher links yet.</p>') +
+        '<label for="tname">Add a teacher</label><input id="tname" autocomplete="off" placeholder="Their name">' +
+        '<button class="btn" id="addteacher" type="button">Make their link</button></section>' +
+      '<section class="card slim"><h2>Admins</h2>' +
+        '<p>' + esc(d.admins.join(', ')) + '</p>' +
+        '<p class="muted small">Admins can do everything here. Admin links are made in the spreadsheet: Check-in menu → Make an admin link.</p></section>' +
+      whoHtml());
+    var teamCall = function (btn, op, extra) {
+      all('button').forEach(function (b) { b.disabled = true; });
+      btn.textContent = 'Saving…';
+      api(op, extra).then(function (res) {
+        if (!handled(res)) return;
+        state.team = res;
+        if (res.ok && res.newKey) {
+          state.newLink = { name: res.name, url: location.origin + location.pathname.replace(/[^/]*$/, '') + 'owner.html#k=' + res.newKey };
+        }
+        draw(res.ok ? res.done : res.error, !res.ok);
+      }).catch(function () {
+        alert('Couldn\'t reach the studio\'s records. Nothing was changed. Please try again.');
+        draw();
+      });
+    };
+    on('#addteacher', 'click', function (e) {
+      var input = app.querySelector('#tname');
+      if (!input.value.trim()) return input.focus();
+      teamCall(e.currentTarget, 'addTeacher', { name: input.value.trim() });
+    });
+    all('[data-renew]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var n = b.getAttribute('data-renew');
+        if (confirm('Make a new link for ' + n + '? Their current link will stop working.')) teamCall(b, 'addTeacher', { name: n, replace: true });
+      });
+    });
+    all('[data-off]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var n = b.getAttribute('data-off');
+        if (confirm('Turn off ' + n + '\'s link? It stops working at once.')) teamCall(b, 'removeTeacher', { name: n });
+      });
+    });
+    on('#sharelink', 'click', function (e) {
+      var btn = e.currentTarget;
+      if (navigator.share) {
+        navigator.share({ text: 'Your link for ' + document.title + ': ' + nl.url }).catch(function () { /* closed */ });
+        return;
+      }
+      var copied = function () { btn.textContent = 'Copied'; };
+      var fallback = function () { app.querySelector('#nlink').select(); document.execCommand('copy'); copied(); };
+      if (navigator.clipboard) navigator.clipboard.writeText(nl.url).then(copied, fallback); else fallback();
     });
   }
 

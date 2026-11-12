@@ -165,44 +165,60 @@ running without you. Repeat steps 1–4, with these differences:
 Your dev copy stays as it is, for trying out changes before they reach the studio. Testing with
 fellow students uses its test links: see [TESTING.md](TESTING.md).
 
-## The owner page
+## The studio page (admins and teachers)
 
-So the owner never has to edit the Sheet, `owner.html` (next to the check-in page) does the
-everyday jobs from her phone:
+So nobody has to edit the Sheet, `owner.html` (next to the check-in page) does the everyday jobs
+from a phone. There are two kinds of link to it:
+- **Admin** (the owner, or anyone she trusts with everything) sees all of the tabs below.
+- **Teacher** sees only **Today** and **Take attendance**: who's in each of today's classes,
+  ticking people in, adding someone new, and **remove**. A teacher doesn't see emails, plans,
+  passes, what anyone owes, or the visits to sort out, and the server refuses those requests for
+  a teacher's link (they aren't just hidden).
+
+What's on it:
 - **Today:** each class with who's in and how it's covered (plan, class pass, drop-in). "Owes" is
   shown for information only. **remove** next to a name undoes one of today's check-ins.
 - **Take attendance** (on each class): a checklist with that class's usual students first (the
   last six weeks), then everyone else. Tick who's there and check them all in at once.
   **Someone new?** at the bottom adds a first-timer (email and name) to that class.
-- **Students:** start, change or end a monthly plan (a start date in the past covers the
+- **Students** (admins): start, change or end a monthly plan (a start date in the past covers the
   check-ins since then), and add a class pass.
-- **To sort out:** match an "I'm here for a class" visit to its class, or remove it.
+- **To sort out** (admins): match an "I'm here for a class" visit to its class, or remove it.
+- **Team** (admins): make a teacher's link, give a teacher a new link, or turn one off.
 
 It doesn't handle money on purpose: payments and prices stay in the Sheet until that's decided
 with the owner.
 
-**Giving someone a link:** in the Sheet, choose **Check-in → Make an owner page link…**, type who
-it's for (e.g. Caress), and send them the address it shows (`…/owner.html#k=…`). They open it once
-on their phone, and from then on it remembers them; they can add it to their home screen.
+**Admin links** are made in the Sheet: **Check-in → Make an admin link for the studio page…**,
+type who it's for (e.g. Caress), and send them the address it shows (`…/owner.html#k=…`).
+
+**Teacher links** are made by an admin on the page's **Team** tab: type the teacher's name, tap
+**Make their link**, then **Send it** (or **Copy it**). The link is shown only then; if it's lost,
+tap **new link** next to their name. **turn off** stops a link at once.
+
+Either way, they open it once on their phone, and from then on it remembers them; they can add it
+to their home screen.
 - Each person gets their own link, named after them. That name goes into the Log's **By** column
   for every check-in they make, so you can see who checked someone in. (A blank **By** means the
   student checked in themselves; the Sheet menu's **Check someone in…** records the email of
   whoever used it.) Removing a check-in or sorting out a visit adds "removed by …" or
   "matched by …" to that row's **Note**.
-- The keys live only in Script Properties (`ownerKeys`), never in the Sheet or the repo. The first
-  link, made before links had names, counts as "Owner".
-- Making a link for a name that already has one replaces it, and the old one stops working. Do
-  that if a phone is lost or a link went to the wrong person. **Turn off an owner page link…**
-  removes someone's link altogether. **Rename an owner page link…** changes only the name it
-  records (e.g. "Owner" to "Caress"); the link itself keeps working.
-- Anyone with the link can see student names and emails and change plans, so treat it like a
-  password.
-- At handover, make a new link in the studio's copy. (A Google sign-in instead of the link is
+- A guest teacher who also takes classes keeps checking in as a student at the sign as usual;
+  their teacher link is separate.
+- The keys live only in Script Properties (`ownerKeys` for admins, `teacherKeys` for teachers),
+  never in the Sheet or the repo. The first link, made before links had names, counts as "Owner".
+- Making an admin link for a name that already has one replaces it, and the old one stops
+  working. Do that if a phone is lost or a link went to the wrong person. **Turn off a studio page
+  link…** removes anyone's link (admin or teacher). **Rename a studio page link…** changes only
+  the name it records (e.g. "Owner" to "Caress"); the link itself keeps working.
+- Anyone with an admin link can see student names and emails and change plans, so treat it like
+  a password. A teacher's link shows names only.
+- At handover, make new links in the studio's copy. (A Google sign-in instead of the link is
   planned for then.)
 
 ## Day to day, for the owner
 
-Most of this is on [the owner page](#the-owner-page); the Sheet does the rest.
+Most of this is on [the studio page](#the-studio-page-admins-and-teachers); the Sheet does the rest.
 
 | To… | Do this |
 |---|---|

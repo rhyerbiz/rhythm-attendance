@@ -238,8 +238,11 @@ function sheetIo_(book) {
   const ss = ss_(), tz = tz_();
   return {
     newId: function (prefix) { return prefix + Utilities.getUuid().replace(/-/g, '').slice(0, 10); },
-    // The owner page's links, {name: key} (menu: "Make an owner page link"). Only ever compared, never sent out.
+    // The studio page's links, {name: key}: admins (menu) and teachers (made on the page's Team tab).
     ownerKeys: ownerKeys_,
+    teacherKeys: teacherKeys_,
+    saveTeacherKeys: saveTeacherKeys_,
+    newKey: newLinkKey_,
     allowNewStudent: function () {
       const cache = CacheService.getScriptCache();
       const key = 'newStudents:' + Utilities.formatDate(new Date(), tz, 'yyyyMMddHH');
@@ -319,9 +322,9 @@ function onOpen() {
     .addSeparator()
     .addItem('Turn on the Monday email and nightly backups', 'installTriggers')
     .addItem('Make a code for a new sign or tag…', 'makeTagCode')
-    .addItem('Make an owner page link…', 'makeOwnerLink')
-    .addItem('Rename an owner page link…', 'renameOwnerLink')
-    .addItem('Turn off an owner page link…', 'turnOffOwnerLink')
+    .addItem('Make an admin link for the studio page…', 'makeOwnerLink')
+    .addItem('Rename a studio page link…', 'renameOwnerLink')
+    .addItem('Turn off a studio page link…', 'turnOffOwnerLink')
     .addItem('Make test links for testers (dev copy)', 'makeTestLinks')
     .addItem('First-time setup', 'setup')
     .addItem('Test the Wix connection (read-only)', 'wixTest')
@@ -552,11 +555,10 @@ function makeTagCode() {
       'Rewrite any older sticker or QR code with its new address.' : ''), ui.ButtonSet.OK);
 }
 
-/**
- * The owner page's links as {name: key}, kept only in Script Properties (never in the Sheet or
- * the repo). Each link has a name, so the Log's By column says who checked someone in. The very
- * first link, made before links had names, is still honoured as "Owner".
- */
+// The studio page's links. Admins ({name: key} in Script Properties → ownerKeys) are made here in
+// the Sheet's menu; teachers (→ teacherKeys) are made by an admin on the page's Team tab, and can
+// be turned off from either place (renamed here). Keys are only ever compared, never sent out
+// (except once, to the admin who just made a teacher's link).
 function ownerKeys_() {
   const props = PropertiesService.getScriptProperties();
   let keys = {};
@@ -572,73 +574,106 @@ function saveOwnerKeys_(keys) {
   props.deleteProperty('ownerKey'); // now kept in ownerKeys (as "Owner")
 }
 
+function teacherKeys_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('teacherKeys') || '{}') || {}; } catch (e) { return {}; }
+}
+
+function saveTeacherKeys_(keys) {
+  PropertiesService.getScriptProperties().setProperty('teacherKeys', JSON.stringify(keys));
+}
+
+/** 24 letters ≈ 96 random bits. */
+function newLinkKey_() { return newTagCode_() + newTagCode_(); }
+
+/** Every link by name, for the menu: "Caress (admin), Dee (teacher)". */
+function linkList_() {
+  const a = ownerKeys_(), t = teacherKeys_();
+  return Object.keys(a).map(function (n) { return { name: n, role: 'admin', keys: a, save: saveOwnerKeys_ }; })
+    .concat(Object.keys(t).map(function (n) { return { name: n, role: 'teacher', keys: t, save: saveTeacherKeys_ }; }));
+}
+function linkNames_(list) { return list.map(function (l) { return l.name + ' (' + l.role + ')'; }).join(', '); }
+function findLink_(list, typed) {
+  const t = String(typed || '').trim().toLowerCase();
+  return list.filter(function (l) { return l.name.toLowerCase() === t; })[0] || null;
+}
+
+/** The page's address from Config → pageUrl, for showing a link in full ('' if it isn't set). */
+function pageBase_() {
+  const page = configFrom_(readBook_().config).pageUrl;
+  return page ? page.replace(/[?#].*$/, '').replace(/[^/]*$/, '') : '';
+}
+
 /**
- * Owner menu: a private link to the owner page (web/owner.html) for one person's phone, named
- * after them. Making one for a name that already has a link replaces it (the old one stops
- * working), so a lost phone or a link sent to the wrong person is fixed by running this again.
+ * Menu: a private admin link to the studio page (web/owner.html) for one person's phone, named
+ * after them. Admins can do everything there, including making teacher links. Making one for a
+ * name that already has a link replaces it (the old one stops working), so a lost phone or a link
+ * sent to the wrong person is fixed by running this again.
  */
 function makeOwnerLink() {
   const ui = SpreadsheetApp.getUi();
   const keys = ownerKeys_();
-  const names = Object.keys(keys);
-  const r = ui.prompt('Owner page link', 'Who is this link for? Their name is recorded on each check-in they make (e.g. Caress).' +
-    (names.length ? '\n\nLinks so far: ' + names.join(', ') + '. Using one of these names replaces that link.' : ''), ui.ButtonSet.OK_CANCEL);
+  const list = linkList_();
+  const r = ui.prompt('Admin link', 'Who is this admin link for? An admin can do everything on the studio page, ' +
+    'including making links for teachers there. Their name is recorded on each check-in they make (e.g. Caress).' +
+    (list.length ? '\n\nLinks so far: ' + linkNames_(list) + '. Using an admin\'s name replaces their link.' : ''), ui.ButtonSet.OK_CANCEL);
   if (r.getSelectedButton() !== ui.Button.OK) return;
   const typed = r.getResponseText().replace(/\s+/g, ' ').trim().slice(0, 30);
   if (!typed) return;
-  const name = names.filter(function (n) { return n.toLowerCase() === typed.toLowerCase(); })[0] || typed;
+  const found = findLink_(list, typed);
+  if (found && found.role === 'teacher') {
+    ui.alert(found.name + ' has a teacher link. Turn it off first (menu: Turn off a studio page link…), then make the admin link.');
+    return;
+  }
+  const name = found ? found.name : typed;
   if (keys[name] && ui.alert('Replace ' + name + '\'s link?', 'Their current link will stop working, and they\'ll need the new one.',
     ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
-  keys[name] = newTagCode_() + newTagCode_(); // 24 letters ≈ 96 random bits
+  keys[name] = newLinkKey_();
   saveOwnerKeys_(keys);
-  const page = configFrom_(readBook_().config).pageUrl;
-  const base = page ? page.replace(/[?#].*$/, '').replace(/[^/]*$/, '') : '';
-  ui.alert('Owner page link for ' + name, (base ? base + 'owner.html#k=' + keys[name]
+  const base = pageBase_();
+  ui.alert('Admin link for ' + name, (base ? base + 'owner.html#k=' + keys[name]
     : 'Your check-in page\'s address followed by owner.html#k=' + keys[name] + '\n(Put the page address in pageUrl in Config and this shows it in full.)') +
     '\n\nSend it to ' + name + ' only. They open it once on their phone and it remembers them; ' +
-    'they can add it to their home screen. Anyone with this link can see student names and change plans.', ui.ButtonSet.OK);
+    'they can add it to their home screen. Anyone with this link can see student names and emails and change plans.', ui.ButtonSet.OK);
 }
 
 /**
- * Owner menu: renames a link without changing it, so its holder needs nothing new. Check-ins
- * already made with it keep the old name in Log → By.
+ * Menu: renames a link (admin or teacher) without changing it, so its holder needs nothing new.
+ * Check-ins already made with it keep the old name in Log → By.
  */
 function renameOwnerLink() {
   const ui = SpreadsheetApp.getUi();
-  const keys = ownerKeys_();
-  const names = Object.keys(keys);
-  if (!names.length) { ui.alert('There are no owner page links.'); return; }
-  const r1 = ui.prompt('Rename an owner page link', 'Which link? ' + names.join(', '), ui.ButtonSet.OK_CANCEL);
+  const list = linkList_();
+  if (!list.length) { ui.alert('There are no links yet.'); return; }
+  const r1 = ui.prompt('Rename a link', 'Which link? ' + linkNames_(list), ui.ButtonSet.OK_CANCEL);
   if (r1.getSelectedButton() !== ui.Button.OK) return;
-  const from = names.filter(function (n) { return n.toLowerCase() === r1.getResponseText().trim().toLowerCase(); })[0];
+  const from = findLink_(list, r1.getResponseText());
   if (!from) { ui.alert('No link is called "' + r1.getResponseText().trim() + '".'); return; }
-  const r2 = ui.prompt('Rename ' + from + '\'s link', 'New name (e.g. Caress). The link itself stays the same.', ui.ButtonSet.OK_CANCEL);
+  const r2 = ui.prompt('Rename ' + from.name + '\'s link', 'New name (e.g. Caress). The link itself stays the same.', ui.ButtonSet.OK_CANCEL);
   if (r2.getSelectedButton() !== ui.Button.OK) return;
   const to = r2.getResponseText().replace(/\s+/g, ' ').trim().slice(0, 30);
-  if (!to || to === from) return;
-  if (names.some(function (n) { return n !== from && n.toLowerCase() === to.toLowerCase(); })) {
+  if (!to || to === from.name) return;
+  if (list.some(function (l) { return l.name !== from.name && l.name.toLowerCase() === to.toLowerCase(); })) {
     ui.alert('There is already a link called ' + to + '.');
     return;
   }
-  keys[to] = keys[from];
-  delete keys[from];
-  saveOwnerKeys_(keys);
-  ui.alert(from + '\'s link is now called ' + to + '. It still works as before; from now on its check-ins say "' + to + '".');
+  from.keys[to] = from.keys[from.name];
+  delete from.keys[from.name];
+  from.save(from.keys);
+  ui.alert(from.name + '\'s link is now called ' + to + '. It still works as before; from now on its check-ins say "' + to + '".');
 }
 
-/** Owner menu: stops one person's owner page link working. */
+/** Menu: stops one person's link (admin or teacher) working. */
 function turnOffOwnerLink() {
   const ui = SpreadsheetApp.getUi();
-  const keys = ownerKeys_();
-  const names = Object.keys(keys);
-  if (!names.length) { ui.alert('There are no owner page links.'); return; }
-  const r = ui.prompt('Turn off an owner page link', 'Whose link? ' + names.join(', '), ui.ButtonSet.OK_CANCEL);
+  const list = linkList_();
+  if (!list.length) { ui.alert('There are no links yet.'); return; }
+  const r = ui.prompt('Turn off a link', 'Whose link? ' + linkNames_(list), ui.ButtonSet.OK_CANCEL);
   if (r.getSelectedButton() !== ui.Button.OK) return;
-  const name = names.filter(function (n) { return n.toLowerCase() === r.getResponseText().trim().toLowerCase(); })[0];
-  if (!name) { ui.alert('No link is called "' + r.getResponseText().trim() + '".'); return; }
-  delete keys[name];
-  saveOwnerKeys_(keys);
-  ui.alert(name + '\'s link is turned off.');
+  const l = findLink_(list, r.getResponseText());
+  if (!l) { ui.alert('No link is called "' + r.getResponseText().trim() + '".'); return; }
+  delete l.keys[l.name];
+  l.save(l.keys);
+  ui.alert(l.name + '\'s link is turned off.');
 }
 
 /** Letters only, so Sheets never mistakes a code for a number (like 12e45). 12 letters ≈ 48 random bits. */

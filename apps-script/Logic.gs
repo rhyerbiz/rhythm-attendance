@@ -767,9 +767,10 @@ function handleRequest_(book, req, now, io) {
 
 // -------------------------------- owner page --------------------------------
 //
-// web/owner.html: the owner's phone page, so she never has to edit the Sheet. Every request
-// carries the key of a named owner link (Script Properties → ownerKeys, made by the menu's "Make an owner page
-// link"), checked before anything else; without it nothing is read or written. Deliberately no
+// web/owner.html: the studio's phone page for admins and teachers, so nobody has to edit the Sheet.
+// (Still called "owner" in code and the file name, so links already handed out keep working.) Every
+// request carries the key of a named link, checked before anything else; without it nothing is read
+// or written. Deliberately no
 // money here (payments, prices): that waits until the owner has said how she wants it.
 
 const PLAN_CHOICES = ['Monthly, 1 class a week', 'Monthly, 2 classes a week'];
@@ -805,13 +806,38 @@ function ownerWho_(given, keys) {
 /** Adds "· removed by Rob Nov 11"-style history to a row's Note, keeping what was there. */
 function noteWith_(note, text) { return str_(note) ? str_(note) + ' · ' + text : text; }
 
+// Two kinds of link. An admin link (Script Properties → ownerKeys, made by the Sheet menu) opens
+// everything. A teacher link (→ teacherKeys, made by an admin on the page's Team tab) opens only
+// check-ins: Today without money, Take attendance and remove. Teachers never see emails, plans,
+// passes or balances, and the server refuses everything else for them (not just hidden buttons).
+const TEACHER_OPS = ['today', 'students', 'checkin', 'checkinMany', 'undo'];
+
+/** Whose link this is and what it may do: {name, role: 'admin'|'teacher'}, or null. */
+function staffWho_(given, admins, teachers) {
+  const a = ownerWho_(given, admins);
+  if (a) return { name: a, role: 'admin' };
+  const t = ownerWho_(given, teachers);
+  return t ? { name: t, role: 'teacher' } : null;
+}
+
 function ownerRequest_(book, cfg, req, now, io) {
-  const keys = io.ownerKeys ? io.ownerKeys() : io.ownerKey ? { Owner: io.ownerKey() } : {};
-  const who = ownerWho_(req.key, keys);
-  if (!who) {
-    return { ok: false, status: 'needKey', error: 'This owner link isn\'t valid any more. Please ask for a new one.' };
+  const staff = staffWho_(req.key, adminKeys_(io), io.teacherKeys ? io.teacherKeys() : {});
+  if (!staff) {
+    return { ok: false, status: 'needKey', error: "This link isn't valid any more. Please ask for a new one." };
   }
   const op = str_(req.op);
+  if (staff.role !== 'admin' && TEACHER_OPS.indexOf(op) < 0) {
+    return { ok: false, error: 'Only an admin can do that.', role: staff.role, who: staff.name };
+  }
+  const res = staffOp_(book, cfg, req, now, io, staff, op);
+  if (staff.role === 'teacher') teacherView_(res);
+  res.role = staff.role;
+  res.who = staff.name;
+  return res;
+}
+
+function staffOp_(book, cfg, req, now, io, staff, op) {
+  const who = staff.name;
   if (op === 'today') return ownerToday_(book, cfg, now);
   if (op === 'students') return ownerStudents_(book, cfg, now);
   if (op === 'startPlan') return ownerStartPlan_(book, cfg, req, now, io, who);
@@ -821,7 +847,67 @@ function ownerRequest_(book, cfg, req, now, io) {
   if (op === 'checkin') return ownerCheckinFromPage_(book, cfg, req, now, io, who);
   if (op === 'checkinMany') return ownerCheckinMany_(book, cfg, req, now, io, who);
   if (op === 'undo') return ownerUndo_(book, cfg, req, now, io, who);
+  if (op === 'team') return team_(io);
+  if (op === 'addTeacher') return addTeacher_(req, io);
+  if (op === 'removeTeacher') return removeTeacher_(req, io);
   return { ok: false, error: 'Unknown request.' };
+}
+
+/** A teacher's answer: who's in, never how they paid, what they owe, their email or plans. */
+function teacherView_(res) {
+  const people = function (list) { (list || []).forEach(function (p) { p.how = ''; p.owes = ''; }); };
+  (res.classes || []).forEach(function (c) { people(c.people); });
+  (res.other || []).forEach(function (c) { people(c.people); });
+  if (res.extras) res.extras = [];
+  if (res.students) {
+    res.students = res.students.map(function (s) { return { id: s.id, name: s.name }; });
+    delete res.planChoices;
+  }
+  return res;
+}
+
+/** The Team tab: everyone's link by name (never the keys). */
+function team_(io) {
+  const names = function (keys) { return Object.keys(keys || {}).sort(function (a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : 1; }); };
+  return { ok: true, admins: names(adminKeys_(io)), teachers: names(io.teacherKeys ? io.teacherKeys() : {}) };
+}
+
+/** Admin links, {name: key}. (A copy from before named links has one key, called "Owner".) */
+function adminKeys_(io) {
+  return io.ownerKeys ? io.ownerKeys() : io.ownerKey ? { Owner: io.ownerKey() } : {};
+}
+
+/** A teacher's name as typed: tidied, and starting with a letter so the Sheet never reads it as a formula. */
+function staffName_(v) {
+  const s = str_(v).replace(/\s+/g, ' ').trim().slice(0, 30);
+  return /^[A-Za-zÀ-ɏ]/.test(s) ? s : '';
+}
+
+/**
+ * Makes a teacher's link and returns its key once (the page builds the link from it). `replace`
+ * gives an existing teacher a new link, so a lost phone or a link sent to the wrong person is fixed.
+ */
+function addTeacher_(req, io) {
+  const typed = staffName_(req.name);
+  if (!typed) return Object.assign(team_(io), { ok: false, error: "Please type the teacher's name." });
+  const teachers = io.teacherKeys();
+  const same = function (keys) { return Object.keys(keys || {}).filter(function (n) { return n.toLowerCase() === typed.toLowerCase(); })[0]; };
+  if (same(adminKeys_(io))) return Object.assign(team_(io), { ok: false, error: typed + ' already has an admin link.' });
+  const name = same(teachers) || typed;
+  if (teachers[name] && !req.replace) return Object.assign(team_(io), { ok: false, error: "There's already a teacher called " + name + '.' });
+  teachers[name] = io.newKey();
+  io.saveTeacherKeys(teachers);
+  return Object.assign(team_(io), { name: name, newKey: teachers[name],
+    done: req.replace ? name + ' has a new link. The old one has stopped working.' : name + "'s link is ready." });
+}
+
+function removeTeacher_(req, io) {
+  const teachers = io.teacherKeys();
+  const name = Object.keys(teachers).filter(function (n) { return n === str_(req.name); })[0];
+  if (!name) return Object.assign(team_(io), { ok: false, error: 'That link was already turned off.' });
+  delete teachers[name];
+  io.saveTeacherKeys(teachers);
+  return Object.assign(team_(io), { done: name + "'s link is turned off." });
 }
 
 /** Today's classes with who's in and how each is covered, plus everything waiting to be sorted out. */

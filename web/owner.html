@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#21ada8">
   <meta name="robots" content="noindex">
-  <!-- The owner's page. Same rules as the check-in page: itself, the Google Font and the Apps Script API. -->
+  <!-- The studio page for admins and teachers. Same rules as the check-in page: itself, the Google Font and the Apps Script API. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'; object-src 'none'">
   <!-- The link carries its key after the #, which browsers never send anywhere; this keeps it out of other sites' logs too. -->
   <meta name="referrer" content="no-referrer">
@@ -28,6 +28,7 @@
     <button type="button" data-tab="today">Today</button>
     <button type="button" data-tab="students">Students</button>
     <button type="button" data-tab="extras">To sort out <span class="count" id="extras-count" hidden></span></button>
+    <button type="button" data-tab="team">Team</button>
   </nav>
   <main id="app" aria-live="polite">
     <div class="card center"><div class="spinner" aria-hidden="true"></div></div>
