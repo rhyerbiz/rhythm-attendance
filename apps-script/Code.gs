@@ -8,7 +8,7 @@
  * so students never see Google's "created by an Apps Script user" banner.
  */
 
-const TAB_KEYS = { Config: 'config', Schedule: 'schedule', Students: 'students', Log: 'log', Packages: 'packages', Plans: 'plans', Payments: 'payments', Tags: 'tags' };
+const TAB_KEYS = { Config: 'config', Schedule: 'schedule', Students: 'students', Log: 'log', Packages: 'packages', Plans: 'plans', Payments: 'payments', Tags: 'tags', Staff: 'staff' };
 // Written by the Wix sync (Wix.gs), never by hand; absent until it first runs. Defined here,
 // not in Wix.gs, because top-level code can't rely on another file having loaded first.
 const WIX_SCHEDULE_TAB = 'Wix schedule';
@@ -243,6 +243,10 @@ function sheetIo_(book) {
     teacherKeys: teacherKeys_,
     saveTeacherKeys: saveTeacherKeys_,
     newKey: newLinkKey_,
+    // Google sign-in (only once its client ID is set: menu "Turn on Google sign-in…").
+    verifyGoogle: googleClientId_() ? verifyGoogle_ : null,
+    sessions: staffSessions_,
+    saveSessions: saveStaffSessions_,
     allowNewStudent: function () {
       const cache = CacheService.getScriptCache();
       const key = 'newStudents:' + Utilities.formatDate(new Date(), tz, 'yyyyMMddHH');
@@ -266,7 +270,14 @@ function sheetIo_(book) {
     append: function (tab, row) {
       this.wroteAny = true;
       const headers = book.headers[tab];
-      const sh = ss.getSheetByName(tab);
+      let sh = ss.getSheetByName(tab);
+      if (!sh && SCHEMA[tab]) { // a tab added since setup ran (Staff): made on its first row
+        sh = ss.insertSheet(tab);
+        sh.getRange(1, 1, 1, SCHEMA[tab].length).setValues([SCHEMA[tab]]).setFontWeight('bold');
+        sh.setFrozenRows(1);
+        headers.length = 0;
+        SCHEMA[tab].forEach(function (h) { headers.push(h); });
+      }
       // A column the tab doesn't have yet (Log's By, on a Sheet from before it existed) is added first.
       Object.keys(row).forEach(function (h) {
         if (str_(row[h]) !== '' && headers.indexOf(h) < 0 && (SCHEMA[tab] || []).indexOf(h) >= 0) addHeader_(sh, headers, h);
@@ -325,6 +336,7 @@ function onOpen() {
     .addItem('Make an admin link for the studio page…', 'makeOwnerLink')
     .addItem('Rename a studio page link…', 'renameOwnerLink')
     .addItem('Turn off a studio page link…', 'turnOffOwnerLink')
+    .addItem('Turn on Google sign-in…', 'turnOnGoogleSignIn')
     .addItem('Make test links for testers (dev copy)', 'makeTestLinks')
     .addItem('First-time setup', 'setup')
     .addItem('Test the Wix connection (read-only)', 'wixTest')
@@ -580,6 +592,69 @@ function teacherKeys_() {
 
 function saveTeacherKeys_(keys) {
   PropertiesService.getScriptProperties().setProperty('teacherKeys', JSON.stringify(keys));
+}
+
+// ------------------------------- Google sign-in -------------------------------
+// Logic.gs has the rules (staffSignIn_); this is the part that needs Google's services.
+
+/** The OAuth client ID the page's "Sign in with Google" button uses ('' = sign-in is off). Not a secret. */
+function googleClientId_() {
+  return PropertiesService.getScriptProperties().getProperty('googleClientId') || '';
+}
+
+/**
+ * Has Google check a sign-in token (an ID token from the page's button): issued by Google, for
+ * this studio's client ID, not expired, with a verified email. One request to Google, only at
+ * sign-in. Returns {email, name} or null.
+ */
+function verifyGoogle_(idToken) {
+  if (!idToken || idToken.length > 4096) return null;
+  let c;
+  try {
+    const res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken), { muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) return null;
+    c = JSON.parse(res.getContentText());
+  } catch (e) {
+    console.warn('Google sign-in check failed: ' + e);
+    return null;
+  }
+  const ok = c.aud === googleClientId_() &&
+    (c.iss === 'https://accounts.google.com' || c.iss === 'accounts.google.com') &&
+    Number(c.exp) * 1000 > Date.now() &&
+    (c.email_verified === true || c.email_verified === 'true');
+  return ok ? { email: String(c.email || ''), name: String(c.name || '') } : null;
+}
+
+/** Signed-in phones: {sessionKey: {email, until}}. Kept only in Script Properties. */
+function staffSessions_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('staffSessions') || '{}') || {}; } catch (e) { return {}; }
+}
+
+function saveStaffSessions_(sessions) {
+  PropertiesService.getScriptProperties().setProperty('staffSessions', JSON.stringify(sessions));
+}
+
+/**
+ * Menu: turns Google sign-in on (or changes or clears its client ID). Who may sign in is the Staff
+ * tab. Links keep working either way.
+ */
+function turnOnGoogleSignIn() {
+  const ui = SpreadsheetApp.getUi();
+  const props = PropertiesService.getScriptProperties();
+  const r = ui.prompt('Google sign-in', 'Paste the OAuth client ID (it ends in .apps.googleusercontent.com). ' +
+    'See SETUP.md, "Google sign-in". Leave it empty to turn sign-in off.' +
+    (googleClientId_() ? '\n\nNow: ' + googleClientId_() : ''), ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  const id = r.getResponseText().trim();
+  if (!id) {
+    props.deleteProperty('googleClientId');
+    ui.alert('Google sign-in is off. Links still work.');
+    return;
+  }
+  if (!/^[\w-]+\.apps\.googleusercontent\.com$/.test(id)) { ui.alert("That doesn't look like a client ID."); return; }
+  props.setProperty('googleClientId', id);
+  ui.alert('Google sign-in is on. Add people to the Staff tab (Email, Name, Role = admin or teacher), ' +
+    "or let an admin add teachers on the studio page's Team tab. The page also needs the same ID in web/config.js.");
 }
 
 /** 24 letters ≈ 96 random bits. */

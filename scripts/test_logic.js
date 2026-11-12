@@ -1224,6 +1224,73 @@ test('studio page: a teacher link does check-ins only, and an admin makes and tu
   assert.strictEqual(as(admins.Caress, { op: 'removeTeacher', name: 'Dee Ray' }).ok, false);
 });
 
+test('studio page: Google sign-in for people on the Staff tab, alongside the links', () => {
+  const book = ownerBook();
+  book.staff = [
+    { Email: 'Caress@Example.com', Name: 'Caress', Role: 'Admin', Active: '' },
+    { Email: 'old@example.com', Name: 'Old Teacher', Role: 'teacher', Active: 'no' },
+  ];
+  const admins = { Caress: 'caresskeycaresskeycaress' };
+  let sessions = {};
+  let n = 0;
+  const io = (google) => {
+    const x = ownerIo(); delete x.ownerKey;
+    x.ownerKeys = () => admins;
+    x.teacherKeys = () => ({});
+    x.newKey = () => 'sessionkey' + String(++n).padStart(14, 'x');
+    x.sessions = () => JSON.parse(JSON.stringify(sessions));
+    x.saveSessions = (s) => { sessions = s; };
+    // Stands in for Google's check: a token here is just the email it proves.
+    if (google !== false) x.verifyGoogle = (t) => (t.startsWith('good:') ? { email: t.slice(5), name: '' } : null);
+    return x;
+  };
+  const call = (req, day, google) => fn('handleRequest_')(book, Object.assign({ action: 'owner' }, req), at(day || MON, '19:10'), io(google));
+  // Off until it's turned on; a bad token or someone not on Staff (or taken off) gets no session.
+  assert.strictEqual(call({ op: 'signIn', idToken: 'good:caress@example.com' }, MON, false).status, 'signInOff');
+  assert.strictEqual(call({ op: 'signIn', idToken: 'forged' }).status, 'signInFailed');
+  assert.strictEqual(call({ op: 'signIn', idToken: 'good:stranger@example.com' }).status, 'notStaff');
+  assert.strictEqual(call({ op: 'signIn', idToken: 'good:old@example.com' }).status, 'notStaff');
+  same(sessions, {});
+  // Caress signs in: her session works like her link, under the name on the Staff tab.
+  const caress = call({ op: 'signIn', idToken: 'good:caress@example.com' });
+  same([caress.ok, caress.role, caress.who], [true, 'admin', 'Caress']);
+  same(sessions[caress.session], { email: 'caress@example.com', until: '2027-01-31' });
+  assert.strictEqual(call({ op: 'today', session: caress.session }).role, 'admin');
+  assert.strictEqual(call({ op: 'today', key: admins.Caress }).role, 'admin'); // the link still works
+  assert.strictEqual(call({ op: 'today', session: 'nosuchsessionnosuchsess' }).status, 'needKey');
+  // She adds a teacher by email from the Team tab; the teacher signs in and is a teacher.
+  assert.strictEqual(call({ op: 'addStaff', session: caress.session, email: 'not-an-email', name: 'Dee' }).ok, false);
+  const added = call({ op: 'addStaff', session: caress.session, email: 'Dee@Example.com', name: 'Dee Ray' });
+  assert.strictEqual(added.ok, true);
+  same(added.staff.map((s) => [s.email, s.role]), [['caress@example.com', 'admin'], ['dee@example.com', 'teacher']]);
+  assert.strictEqual(call({ op: 'addStaff', session: caress.session, email: 'dee@example.com', name: 'Dee' }).ok, false);
+  const dee = call({ op: 'signIn', idToken: 'good:dee@example.com' });
+  same([dee.role, dee.who], ['teacher', 'Dee Ray']);
+  const today = call({ op: 'today', session: dee.session });
+  same([today.role, today.extras], ['teacher', []]);
+  for (const op of ['addStaff', 'removeStaff', 'team', 'addPass']) {
+    assert.strictEqual(call({ op, session: dee.session, email: 'x@example.com', name: 'X' }).error, 'Only an admin can do that.', op);
+  }
+  // Her check-ins say Dee Ray.
+  const sam = book.students.find((s) => s.Email === 'sam@example.com').StudentID;
+  call({ op: 'checkinMany', session: dee.session, classId: 'K2', studentIds: [sam] });
+  assert.strictEqual(book.log.find((l) => l.ClassID === 'K2' && l.Student === 'Sam Park').By, 'Dee Ray');
+  // Admins can't be removed from the page; taking Dee off locks her out at once, on every phone.
+  assert.strictEqual(call({ op: 'removeStaff', session: caress.session, email: 'caress@example.com' }).ok, false);
+  assert.strictEqual(call({ op: 'removeStaff', session: caress.session, email: 'dee@example.com' }).ok, true);
+  assert.strictEqual(call({ op: 'today', session: dee.session }).status, 'needKey');
+  // Adding her back reuses her row.
+  call({ op: 'addStaff', session: caress.session, email: 'dee@example.com', name: 'Dee Ray' });
+  assert.strictEqual(book.staff.filter((r) => /dee/i.test(r.Email)).length, 1);
+  assert.strictEqual(call({ op: 'today', session: dee.session }).role, 'teacher');
+  // Signing out ends that phone's session only; sessions run out after 90 days.
+  assert.strictEqual(call({ op: 'signOut', session: dee.session }).ok, true);
+  assert.strictEqual(call({ op: 'today', session: dee.session }).status, 'needKey');
+  assert.strictEqual(call({ op: 'today', session: caress.session }).role, 'admin');
+  assert.strictEqual(call({ op: 'today', session: caress.session }, '2027-01-31').role, 'admin');
+  assert.strictEqual(call({ op: 'today', session: caress.session }, '2027-02-01').status, 'needKey');
+});
+
 // The page's own scripts aren't run here, but a syntax error in one blanks the live page.
 test('the check-in page scripts parse', () => {
   for (const f of ['web/app.js', 'web/owner.js', 'web/mock.js', 'web/config.js', 'apps-script/Code.gs', 'apps-script/Wix.gs']) {

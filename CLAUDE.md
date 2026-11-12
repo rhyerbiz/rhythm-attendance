@@ -173,7 +173,13 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     `addTeacher_`/`removeTeacher_`; the new key is returned once). A teacher may only use
     `TEACHER_OPS` (today, students, check-ins, remove), refused server-side otherwise, and
     `teacherView_` strips how-covered/owes/emails/plans/extras from their answers. Code and the file
-    keep the "owner" names so links already handed out keep working. The name goes into Log → `By`
+    keep the "owner" names so links already handed out keep working. **Google sign-in** (branch
+    `google-signin`, alongside links): the Staff tab (Email, Name, Role, Active) says who may sign
+    in; `op: 'signIn'` sends Google's ID token, `io.verifyGoogle` (Code.gs, tokeninfo + aud =
+    Script Properties `googleClientId`, set by menu "Turn on Google sign-in…") checks it, and the
+    answer is a 90-day session key (Script Properties `staffSessions`) sent as `req.session`.
+    `sessionWho_` re-reads Staff on every request, so removal is immediate. Off until both the
+    property and `config.js` `googleClientId` are set. The name goes into Log → `By`
     on each check-in they make (blank = the student themselves; the Sheet menu writes the user's
     email), and into Note on removals and sort-outs. The key travels in the link's `#k=` fragment,
     is kept in the phone's localStorage, and is never in the Sheet or the repo. **No money on purpose:**

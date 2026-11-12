@@ -5,6 +5,8 @@
 window.MockBackend = (function () {
   'use strict';
   var KEY = 'rhythm.mockBook';
+  // Who can sign in to the preview's studio page (owner.html?signin): any email typed there that's on this list.
+  var PREVIEW_STAFF = [{ Email: 'owner@example.com', Name: 'Preview Owner', Role: 'admin', Active: 'yes' }];
   var memory = null;
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -54,6 +56,7 @@ window.MockBackend = (function () {
       log: keep ? keep.log : [],
       packages: keep ? keep.packages : [],
       plans: keep ? keep.plans || [] : [],
+      staff: keep && keep.staff ? keep.staff : PREVIEW_STAFF.slice(),
       payments: keep ? keep.payments : [],
     };
   }
@@ -73,6 +76,13 @@ window.MockBackend = (function () {
     if (!book.config.some(function (r) { return r.Key === 'chatLink'; })) {
       book.config.push({ Key: 'chatLink', Value: 'https://t.me/+preview-only-not-a-real-group' });
     }
+    if (!book.staff) book.staff = PREVIEW_STAFF.slice();
+    var stored = function (k, v) {
+      try {
+        if (v === undefined) return JSON.parse(localStorage.getItem(KEY + k) || '{}') || {};
+        localStorage.setItem(KEY + k, JSON.stringify(v));
+      } catch (e) { return {}; }
+    };
     var io = {
       newId: function (p) { return p + Math.random().toString(36).slice(2, 10); },
       append: function () { /* rows are already in book */ },
@@ -85,6 +95,10 @@ window.MockBackend = (function () {
       saveTeacherKeys: function (keys) {
         try { localStorage.setItem(KEY + '.teachers', JSON.stringify(keys)); } catch (e) { /* preview only */ }
       },
+      // Google sign-in, pretend: the preview's sign-in box sends "preview:<email>" instead of a Google token.
+      verifyGoogle: function (t) { return /^preview:/.test(t) ? { email: t.slice(8), name: '' } : null; },
+      sessions: function () { return stored('.sessions'); },
+      saveSessions: function (v) { stored('.sessions', v); },
       newKey: function () { var k = ''; while (k.length < 24) k += Math.random().toString(36).replace(/[^a-z]/g, ''); return k.slice(0, 24); },
     };
     var res = handleRequest_(book, JSON.parse(JSON.stringify(req)), nowParts(), io);

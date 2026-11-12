@@ -213,8 +213,39 @@ to their home screen.
   the name it records (e.g. "Owner" to "Caress"); the link itself keeps working.
 - Anyone with an admin link can see student names and emails and change plans, so treat it like
   a password. A teacher's link shows names only.
-- At handover, make new links in the studio's copy. (A Google sign-in instead of the link is
-  planned for then.)
+- At handover, make new links in the studio's copy, or use Google sign-in instead (below).
+
+### Google sign-in (instead of links, or alongside them)
+
+With it on, staff open the plain page address (`…/owner.html`) and tap **Sign in with Google**.
+There is no link to send or keep: who may sign in is the **Staff** tab (Email, Name, Role =
+`admin` or `teacher`, Active). An admin adds and removes teachers on the page's **Team** tab (by
+their Google email); admins are typed into the Staff tab. Links keep working alongside it.
+
+- The server has Google check each sign-in, then gives that phone its own session for 90 days,
+  so nobody signs in every visit. Taking someone off Staff (Active = no, or **remove** on the
+  Team tab) locks them out at once, on every phone. **Sign out** at the bottom of the page ends
+  that phone's session.
+- Someone whose email isn't a Gmail address can still sign in: they make a Google account for
+  their existing email (accounts.google.com → Create account → "Use your existing email").
+- Sessions live only in Script Properties (`staffSessions`).
+
+**Turning it on** (once per copy, free; do it signed in as the account that owns that copy):
+1. At **console.cloud.google.com**, create a project (e.g. "Rhythm check-in").
+2. **Google Auth Platform → Get started:** app name, support email, Audience **External**,
+   contact email, agree, **Create**. Then **Audience → Publish app** (In production). It asks
+   only for name and email, so Google doesn't need to review it.
+3. **Clients → Create client → Web application.** Under **Authorized JavaScript origins** add the
+   page's address (e.g. `https://rhyerbiz.github.io`; for the studio, its domain) and, on dev,
+   `http://localhost:8642`. No redirect URIs. **Create**, and copy the **Client ID** (it isn't
+   a secret; ignore the client secret).
+4. In the Sheet: **Check-in → Turn on Google sign-in…**, paste the client ID. Add the admins to
+   the **Staff** tab (it appears on first use, or run **First-time setup**).
+5. Put the same client ID in `web/config.js` (`googleClientId` for that copy) and publish the page.
+   Until then the page shows no sign-in button.
+
+To try it in the preview without Google: open `owner.html?signin` and sign in as
+`owner@example.com` (the preview's pretend admin).
 
 ## Day to day, for the owner
 

@@ -25,6 +25,8 @@ const SCHEMA = {
   Plans: ['PlanID', 'Student', 'Plan', 'Start', 'End', 'Note'],
   Payments: ['PaymentID', 'Student', 'Amount', 'Date', 'For', 'Status', 'Method', 'Note', 'Covers'],
   Tags: ['Code', 'Name', 'Active', 'Notes', 'Scenario'],
+  // Who may sign in to the studio page with Google. Role: admin (everything) or teacher.
+  Staff: ['Email', 'Name', 'Role', 'Active', 'Note'],
 };
 
 const DEFAULT_CONFIG = {
@@ -810,7 +812,7 @@ function noteWith_(note, text) { return str_(note) ? str_(note) + ' · ' + text 
 // everything. A teacher link (→ teacherKeys, made by an admin on the page's Team tab) opens only
 // check-ins: Today without money, Take attendance and remove. Teachers never see emails, plans,
 // passes or balances, and the server refuses everything else for them (not just hidden buttons).
-const TEACHER_OPS = ['today', 'students', 'checkin', 'checkinMany', 'undo'];
+const TEACHER_OPS = ['today', 'students', 'checkin', 'checkinMany', 'undo', 'signOut'];
 
 /** Whose link this is and what it may do: {name, role: 'admin'|'teacher'}, or null. */
 function staffWho_(given, admins, teachers) {
@@ -821,11 +823,14 @@ function staffWho_(given, admins, teachers) {
 }
 
 function ownerRequest_(book, cfg, req, now, io) {
-  const staff = staffWho_(req.key, adminKeys_(io), io.teacherKeys ? io.teacherKeys() : {});
+  const op = str_(req.op);
+  if (op === 'signIn') return staffSignIn_(book, cfg, req, now, io);
+  // A link's key, or a Google sign-in's session key (from signIn).
+  const staff = staffWho_(req.key, adminKeys_(io), io.teacherKeys ? io.teacherKeys() : {}) ||
+    (req.session && io.sessions ? sessionWho_(book, req.session, io.sessions(), now.date) : null);
   if (!staff) {
     return { ok: false, status: 'needKey', error: "This link isn't valid any more. Please ask for a new one." };
   }
-  const op = str_(req.op);
   if (staff.role !== 'admin' && TEACHER_OPS.indexOf(op) < 0) {
     return { ok: false, error: 'Only an admin can do that.', role: staff.role, who: staff.name };
   }
@@ -847,9 +852,14 @@ function staffOp_(book, cfg, req, now, io, staff, op) {
   if (op === 'checkin') return ownerCheckinFromPage_(book, cfg, req, now, io, who);
   if (op === 'checkinMany') return ownerCheckinMany_(book, cfg, req, now, io, who);
   if (op === 'undo') return ownerUndo_(book, cfg, req, now, io, who);
-  if (op === 'team') return team_(io);
-  if (op === 'addTeacher') return addTeacher_(req, io);
-  if (op === 'removeTeacher') return removeTeacher_(req, io);
+  if (op === 'signOut') return staffSignOut_(req, now, io);
+  // The Team tab: links, and the people who sign in with Google.
+  const withStaff = function (res) { res.staff = staffForTeam_(book); return Object.assign(team_(io), res); };
+  if (op === 'team') return withStaff({});
+  if (op === 'addTeacher') return withStaff(addTeacher_(req, io));
+  if (op === 'removeTeacher') return withStaff(removeTeacher_(req, io));
+  if (op === 'addStaff') return withStaff(addStaff_(book, req, now, io, who));
+  if (op === 'removeStaff') return withStaff(removeStaff_(book, req, now, io, who));
   return { ok: false, error: 'Unknown request.' };
 }
 
@@ -908,6 +918,117 @@ function removeTeacher_(req, io) {
   delete teachers[name];
   io.saveTeacherKeys(teachers);
   return Object.assign(team_(io), { done: name + "'s link is turned off." });
+}
+
+// ------------------------------- Google sign-in -------------------------------
+//
+// The other way into the studio page, alongside the links (both work). Who may sign in is the
+// Staff tab: one row per person (Email, Name, Role = admin | teacher, Active). An admin adds and
+// removes teachers on the Team tab; admins are typed into the tab. Signing in: the page gets a
+// token from Google's own button, the server has Google check it (`io.verifyGoogle`, Code.gs) and
+// looks the email up in Staff, then hands the phone a session key of its own
+// (Script Properties → staffSessions), so later requests are as quick as a link's. Every request
+// looks the person up in Staff again, so taking someone off locks them out at once.
+
+const STAFF_ROLES = ['admin', 'teacher'];
+const STAFF_SESSION_DAYS = 90;
+
+/** Active Staff rows, as {email, name, role, row}. */
+function staffList_(book) {
+  return (book.staff || []).map(function (r) {
+    return { email: cleanEmail_(r.Email), name: str_(r.Name), role: str_(r.Role).toLowerCase(), row: r };
+  }).filter(function (s) {
+    return validEmail_(s.email) && STAFF_ROLES.indexOf(s.role) >= 0 && !/^(no|n|false|0)$/i.test(str_(s.row.Active));
+  });
+}
+
+function staffByEmail_(book, email) {
+  const e = cleanEmail_(email);
+  return staffList_(book).filter(function (s) { return s.email === e; })[0] || null;
+}
+
+/** The name a signed-in person's check-ins are recorded under (Log → By). */
+function staffLabel_(s) { return s.name || s.email.split('@')[0]; }
+
+/** Whose session key this is: {name, role, email}, or null (unknown, expired, or no longer on Staff). */
+function sessionWho_(book, given, sessions, today) {
+  if (str_(given).length < 20) return null;
+  let found = null;
+  Object.keys(sessions || {}).forEach(function (k) { if (ownerKeyOk_(given, k)) found = sessions[k]; });
+  if (!found || !(str_(found.until) >= today)) return null;
+  const s = staffByEmail_(book, found.email);
+  return s ? { name: staffLabel_(s), role: s.role, email: s.email } : null;
+}
+
+/** Sessions still running on `today` (expired ones are dropped whenever the list is saved). */
+function liveSessions_(sessions, today) {
+  const out = {};
+  Object.keys(sessions || {}).forEach(function (k) { if (str_(sessions[k].until) >= today) out[k] = sessions[k]; });
+  return out;
+}
+
+/** op 'signIn': a Google token in, a session key out (only for someone on the Staff tab). */
+function staffSignIn_(book, cfg, req, now, io) {
+  if (!io.verifyGoogle) return { ok: false, status: 'signInOff', error: "Google sign-in isn't turned on yet." };
+  const claims = io.verifyGoogle(str_(req.idToken));
+  if (!claims || !validEmail_(claims.email)) {
+    return { ok: false, status: 'signInFailed', error: "That sign-in didn't work. Please try again." };
+  }
+  const s = staffByEmail_(book, claims.email);
+  if (!s) {
+    return { ok: false, status: 'notStaff', email: cleanEmail_(claims.email),
+      error: cleanEmail_(claims.email) + " isn't on the studio's staff list. Ask the owner to add it, then sign in again." };
+  }
+  const sessions = liveSessions_(io.sessions(), now.date);
+  const key = io.newKey();
+  sessions[key] = { email: s.email, until: addDays_(now.date, STAFF_SESSION_DAYS) };
+  io.saveSessions(sessions);
+  return { ok: true, session: key, role: s.role, who: staffLabel_(s), studio: cfg.studioName };
+}
+
+/** op 'signOut': ends this phone's session (other phones stay signed in). */
+function staffSignOut_(req, now, io) {
+  const sessions = liveSessions_(io.sessions(), now.date);
+  Object.keys(sessions).forEach(function (k) { if (ownerKeyOk_(req.session, k)) delete sessions[k]; });
+  io.saveSessions(sessions);
+  return { ok: true, done: 'Signed out.' };
+}
+
+/** The Team tab's staff list (no keys or sessions). */
+function staffForTeam_(book) {
+  return staffList_(book).map(function (s) { return { email: s.email, name: s.name, role: s.role }; })
+    .sort(function (a, b) { return (a.role + a.name.toLowerCase()) < (b.role + b.name.toLowerCase()) ? -1 : 1; });
+}
+
+/** op 'addStaff' (admins): a teacher who signs in with Google, by email. A removed one comes back. */
+function addStaff_(book, req, now, io, who) {
+  const email = cleanEmail_(req.email);
+  const name = staffName_(req.name);
+  if (!validEmail_(email)) return { ok: false, error: "That email doesn't look right." };
+  if (!name) return { ok: false, error: "Please type the teacher's name." };
+  if (staffByEmail_(book, email)) return { ok: false, error: email + ' is already on the staff list.' };
+  const old = (book.staff || []).filter(function (r) { return cleanEmail_(r.Email) === email; })[0];
+  const fields = { Name: name, Role: 'teacher', Active: 'yes', Note: noteWith_(old ? old.Note : '', 'added by ' + str_(who) + ' ' + fmtDay_(now.date)) };
+  if (old) {
+    Object.keys(fields).forEach(function (k) { old[k] = fields[k]; });
+    io.update('Staff', old, fields);
+  } else {
+    const row = Object.assign({ Email: email }, fields);
+    (book.staff = book.staff || []).push(row);
+    io.append('Staff', row);
+  }
+  return { ok: true, done: name + ' can now sign in with ' + email + '.' };
+}
+
+/** op 'removeStaff' (admins): a teacher can't sign in any more (Active = no; the row stays). */
+function removeStaff_(book, req, now, io, who) {
+  const s = staffByEmail_(book, req.email);
+  if (!s) return { ok: false, error: 'They were already taken off.' };
+  if (s.role !== 'teacher') return { ok: false, error: 'Admins are taken off in the Staff tab of the spreadsheet.' };
+  const fields = { Active: 'no', Note: noteWith_(s.row.Note, 'removed by ' + str_(who) + ' ' + fmtDay_(now.date)) };
+  Object.keys(fields).forEach(function (k) { s.row[k] = fields[k]; });
+  io.update('Staff', s.row, fields);
+  return { ok: true, done: staffLabel_(s) + ' can no longer sign in.' };
 }
 
 /** Today's classes with who's in and how each is covered, plus everything waiting to be sorted out. */

@@ -12,12 +12,15 @@
   var ENV = (function () {
     if (params.has('mock')) return null;
     var host = location.hostname;
-    if (CFG.prod && CFG.prod.host === host) return { name: 'prod', apiUrl: CFG.prod.apiUrl };
-    if (CFG.dev && (CFG.dev.host === host || params.has('dev'))) return { name: 'dev', apiUrl: CFG.dev.apiUrl };
+    if (CFG.prod && CFG.prod.host === host) return { name: 'prod', apiUrl: CFG.prod.apiUrl, googleClientId: CFG.prod.googleClientId };
+    if (CFG.dev && (CFG.dev.host === host || params.has('dev'))) return { name: 'dev', apiUrl: CFG.dev.apiUrl, googleClientId: CFG.dev.googleClientId };
     return null;
   })();
   var MOCK = !ENV || !ENV.apiUrl;
   var KEY_STORE = 'rhythm.ownerKey';
+  var SESSION_STORE = 'rhythm.staffSession'; // from "Sign in with Google"
+  // Google sign-in is offered once config.js has this copy's client ID (the preview pretends, with ?signin).
+  var CLIENT_ID = MOCK ? (params.has('signin') ? 'preview' : '') : (ENV.googleClientId || '');
   var MOCK_KEY = 'previewownerkeypreviewowner'; // matches mock.js
   var app = document.getElementById('app');
   var tabs = document.getElementById('tabs');
@@ -34,12 +37,19 @@
     }
     var kept = '';
     try { kept = localStorage.getItem(KEY_STORE) || ''; } catch (e) { /* none */ }
-    return kept || (MOCK ? MOCK_KEY : ''); // the preview is an admin until a teacher's link is opened
+    // The preview is an admin until a teacher's link is opened (or ?signin, to try Google sign-in).
+    return kept || (MOCK && !params.has('signin') ? MOCK_KEY : '');
   })();
+  var session = (function () { try { return localStorage.getItem(SESSION_STORE) || ''; } catch (e) { return ''; } })();
+  function setSession(v) {
+    session = v || '';
+    try { if (session) localStorage.setItem(SESSION_STORE, session); else localStorage.removeItem(SESSION_STORE); } catch (e) { /* this visit only */ }
+  }
 
   // ------------------------------------------------------------------ api
   function api(op, extra) {
-    var req = Object.assign({ action: 'owner', op: op, key: key }, extra || {});
+    // A link's key if this phone has one, otherwise the Google sign-in's session.
+    var req = Object.assign({ action: 'owner', op: op }, key ? { key: key } : { session: session }, extra || {});
     if (MOCK) return window.MockBackend.handle(req);
     return fetch(ENV.apiUrl, {
       method: 'POST',
@@ -163,7 +173,11 @@
   function handled(res) {
     setStudio(res && res.studio);
     setRole(res);
-    if (res && res.status === 'needKey') { viewNeedKey(); return false; }
+    if (res && res.status === 'needKey') {
+      if (!key && session) setSession(''); // run out, or taken off the staff list
+      viewNeedKey();
+      return false;
+    }
     if (res && !res.ok && !res.classes && !res.students && !res.teachers) { draw(res.error || 'That didn\'t work.', true); return false; }
     return true;
   }
@@ -181,6 +195,7 @@
   // ---------------------------------------------------------------- views
   function viewNeedKey() {
     tabs.hidden = true;
+    if (CLIENT_ID && !key) return viewSignIn();
     render('<div class="card center"><h1>Studio page</h1>' +
       '<p>This phone doesn\'t have a working link. Please open the link you were sent again, or ask for a new one.</p></div>');
   }
@@ -457,7 +472,88 @@
   }
 
   function whoHtml() {
-    return state.who ? '<p class="muted small center" style="margin-top:14px">' + esc(state.who) + '\'s ' + state.role + ' link</p>' : '';
+    if (!state.who) return '';
+    if (key) return '<p class="muted small center" style="margin-top:14px">' + esc(state.who) + '\'s ' + state.role + ' link</p>';
+    return '<p class="muted small center" style="margin-top:14px">Signed in as ' + esc(state.who) + ' (' + state.role + ') · ' +
+      '<button class="linkish" id="signout" type="button">Sign out</button></p>';
+  }
+  // Sign out is drawn by whoHtml at the bottom of Today and Team.
+  app.addEventListener('click', function (e) {
+    if (!e.target.closest('#signout')) return;
+    api('signOut').catch(function () { /* signed out on this phone either way */ });
+    setSession('');
+    try { if (window.google && google.accounts) google.accounts.id.disableAutoSelect(); } catch (err) { /* fine */ }
+    state.today = state.students = state.team = null;
+    state.role = state.who = '';
+    viewSignIn();
+  });
+
+  // ------------------------------------------------------- Google sign-in
+  // Google's own button gives the page a token; the server checks it with Google, looks the email
+  // up on the Staff tab, and answers with a session key this phone keeps (like a link's key).
+  var gisLoading = null;
+  function loadGoogle() {
+    if (!gisLoading) {
+      gisLoading = new Promise(function (resolve, reject) {
+        var s = document.createElement('script');
+        s.src = 'https://accounts.google.com/gsi/client';
+        s.onload = resolve;
+        s.onerror = function () { gisLoading = null; reject(new Error('gsi')); };
+        document.head.appendChild(s);
+      });
+    }
+    return gisLoading;
+  }
+
+  function viewSignIn(msg, bad) {
+    tabs.hidden = true;
+    render(noteHtml(msg, bad) + '<div class="card center"><h1>Studio page</h1>' +
+      '<p>Sign in with the Google account the studio has on its staff list.</p>' +
+      (CLIENT_ID === 'preview'
+        ? '<label for="pemail">Preview: sign in as</label><input id="pemail" type="email" value="owner@example.com">' +
+          '<button class="btn" id="psign" type="button">Sign in</button>'
+        : '<div id="gbtn" style="display:flex;justify-content:center;min-height:44px"></div>') +
+      '</div>');
+    if (CLIENT_ID === 'preview') {
+      on('#psign', 'click', function () { signIn('preview:' + app.querySelector('#pemail').value.trim()); });
+      return;
+    }
+    loadGoogle().then(function () {
+      google.accounts.id.initialize({ client_id: CLIENT_ID, callback: function (r) { signIn(r.credential); }, auto_select: true });
+      var box = app.querySelector('#gbtn');
+      if (box) google.accounts.id.renderButton(box, { theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill' });
+    }).catch(function () {
+      viewError('Couldn\'t load Google sign-in. Check your signal and try again.', function () { viewSignIn(); });
+    });
+  }
+
+  function signIn(idToken) {
+    busy();
+    api('signIn', { idToken: idToken }).then(function (res) {
+      setStudio(res && res.studio);
+      if (res && res.ok && res.session) {
+        setSession(res.session);
+        setRole(res);
+        return show('today');
+      }
+      try { google.accounts.id.disableAutoSelect(); } catch (e) { /* preview */ }
+      viewSignIn((res && res.error) || 'That sign-in didn\'t work. Please try again.', true);
+    }).catch(function () {
+      viewSignIn('Couldn\'t reach the studio\'s records. Check your signal and try again.', true);
+    });
+  }
+
+  // Who signs in with Google (the Staff tab). Admins add and remove teachers here by email.
+  function staffHtml(staff) {
+    return '<section class="card slim"><h2>Sign in with Google</h2>' +
+      '<p class="muted small">People here open the studio page and sign in with their Google account. No link to send.</p>' +
+      (staff.length ? '<ul class="people">' + staff.map(function (s) {
+        return '<li><span>' + esc(s.name || s.email) + '<span class="by">' + esc(s.email) + ' · ' + esc(s.role) + '</span></span>' +
+          (s.role === 'teacher' ? '<span><button class="linkish" type="button" data-unstaff="' + esc(s.email) + '" data-who="' + esc(s.name || s.email) + '">remove</button></span>' : '') + '</li>';
+      }).join('') + '</ul>' : '<p class="muted small">Nobody yet.</p>') +
+      '<label for="semail">Add a teacher: their Google email</label><input id="semail" type="email" autocomplete="off">' +
+      '<label for="sname">Their name</label><input id="sname" autocomplete="off">' +
+      '<button class="btn" id="addstaff" type="button">Add teacher</button></section>';
   }
 
   // Admins only: teachers' links, made and turned off here. A new link is shown once, to send.
@@ -470,7 +566,8 @@
         '<button class="btn" id="sharelink" type="button">' + (navigator.share ? 'Send it' : 'Copy it') + '</button>' +
         '<p class="muted small">Send it to ' + esc(nl.name) + ' only, in a text or private message. They open it once on their phone, which remembers it. ' +
           'It\'s shown only now: if it\'s lost, make them a new link.</p></section>' : '') +
-      '<section class="card slim"><h2>Teachers</h2>' +
+      (d.staff && (CLIENT_ID || d.staff.length) ? staffHtml(d.staff) : '') +
+      '<section class="card slim"><h2>' + (CLIENT_ID ? 'Teacher links' : 'Teachers') + '</h2>' +
         '<p class="muted small">A teacher\'s link shows today\'s classes, and lets them take attendance and remove a check-in. ' +
           'It doesn\'t show emails, plans, passes or what anyone owes.</p>' +
         (d.teachers.length ? '<ul class="people">' + d.teachers.map(function (n) {
@@ -499,6 +596,18 @@
         draw();
       });
     };
+    on('#addstaff', 'click', function (e) {
+      var email = app.querySelector('#semail'), name = app.querySelector('#sname');
+      if (!email.value.trim()) return email.focus();
+      if (!name.value.trim()) return name.focus();
+      teamCall(e.currentTarget, 'addStaff', { email: email.value.trim(), name: name.value.trim() });
+    });
+    all('[data-unstaff]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var n = b.getAttribute('data-who');
+        if (confirm('Take ' + n + ' off? They can no longer sign in, on any phone.')) teamCall(b, 'removeStaff', { email: b.getAttribute('data-unstaff') });
+      });
+    });
     on('#addteacher', 'click', function (e) {
       var input = app.querySelector('#tname');
       if (!input.value.trim()) return input.focus();
@@ -544,7 +653,7 @@
       if (logo.complete && !logo.naturalWidth) fail(); else logo.addEventListener('error', fail);
     }
     setStudio(CFG.studioName);
-    if (!key) return viewNeedKey();
+    if (!key && !session) return viewNeedKey();
     show('today');
   }
 
