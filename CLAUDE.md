@@ -170,7 +170,7 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     Two roles: **admin** (Script Properties `ownerKeys` = {name: key}, made per person by the
     menu's "Make an admin link for the studio page…"; the pre-names `ownerKey` counts as "Owner")
     and **teacher** (`teacherKeys`, made, renewed and turned off by an admin on the page's Team tab:
-    `addTeacher_`/`removeTeacher_`; the new key is returned once). A teacher may only use
+    `addTeacher_`/`removeTeacher_`/`showTeacherLink_`; only admins ever get a key back). A teacher may only use
     `TEACHER_OPS` (today, students, check-ins, remove), refused server-side otherwise, and
     `teacherView_` strips how-covered/owes/emails/plans/extras from their answers. Code and the file
     keep the "owner" names so links already handed out keep working. The name goes into Log → `By`

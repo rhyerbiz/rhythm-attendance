@@ -460,7 +460,7 @@
     return state.who ? '<p class="muted small center" style="margin-top:14px">' + esc(state.who) + '\'s ' + state.role + ' link</p>' : '';
   }
 
-  // Admins only: teachers' links, made and turned off here. A new link is shown once, to send.
+  // Admins only: teachers' links, made, shown again, renewed and turned off here.
   function viewTeam(msg, bad) {
     var d = state.team;
     var nl = state.newLink;
@@ -469,12 +469,13 @@
         '<input id="nlink" readonly value="' + esc(nl.url) + '">' +
         '<button class="btn" id="sharelink" type="button">' + (navigator.share ? 'Send it' : 'Copy it') + '</button>' +
         '<p class="muted small">Send it to ' + esc(nl.name) + ' only, in a text or private message. They open it once on their phone, which remembers it. ' +
-          'It\'s shown only now: if it\'s lost, make them a new link.</p></section>' : '') +
+          'To send it again later, tap show link next to their name.</p></section>' : '') +
       '<section class="card slim"><h2>Teachers</h2>' +
         '<p class="muted small">A teacher\'s link shows today\'s classes, and lets them take attendance and remove a check-in. ' +
           'It doesn\'t show emails, plans, passes or what anyone owes.</p>' +
         (d.teachers.length ? '<ul class="people">' + d.teachers.map(function (n) {
           return '<li><span>' + esc(n) + '</span><span>' +
+            '<button class="linkish" type="button" data-show="' + esc(n) + '">show link</button> · ' +
             '<button class="linkish" type="button" data-renew="' + esc(n) + '">new link</button> · ' +
             '<button class="linkish" type="button" data-off="' + esc(n) + '">turn off</button></span></li>';
         }).join('') + '</ul>' : '<p class="muted small">No teacher links yet.</p>') +
@@ -503,6 +504,9 @@
       var input = app.querySelector('#tname');
       if (!input.value.trim()) return input.focus();
       teamCall(e.currentTarget, 'addTeacher', { name: input.value.trim() });
+    });
+    all('[data-show]').forEach(function (b) {
+      b.addEventListener('click', function () { teamCall(b, 'showTeacherLink', { name: b.getAttribute('data-show') }); });
     });
     all('[data-renew]').forEach(function (b) {
       b.addEventListener('click', function () {

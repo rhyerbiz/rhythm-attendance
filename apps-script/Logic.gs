@@ -850,6 +850,7 @@ function staffOp_(book, cfg, req, now, io, staff, op) {
   if (op === 'team') return team_(io);
   if (op === 'addTeacher') return addTeacher_(req, io);
   if (op === 'removeTeacher') return removeTeacher_(req, io);
+  if (op === 'showTeacherLink') return showTeacherLink_(req, io);
   return { ok: false, error: 'Unknown request.' };
 }
 
@@ -899,6 +900,14 @@ function addTeacher_(req, io) {
   io.saveTeacherKeys(teachers);
   return Object.assign(team_(io), { name: name, newKey: teachers[name],
     done: req.replace ? name + ' has a new link. The old one has stopped working.' : name + "'s link is ready." });
+}
+
+/** An admin asks for a teacher's current link again (unchanged, so the teacher's phone keeps working). */
+function showTeacherLink_(req, io) {
+  const teachers = io.teacherKeys();
+  const name = Object.keys(teachers).filter(function (n) { return n === str_(req.name); })[0];
+  if (!name) return Object.assign(team_(io), { ok: false, error: 'That link was turned off.' });
+  return Object.assign(team_(io), { name: name, newKey: teachers[name], done: 'Here is ' + name + "'s link." });
 }
 
 function removeTeacher_(req, io) {

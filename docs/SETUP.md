@@ -193,8 +193,8 @@ with the owner.
 type who it's for (e.g. Caress), and send them the address it shows (`…/owner.html#k=…`).
 
 **Teacher links** are made by an admin on the page's **Team** tab: type the teacher's name, tap
-**Make their link**, then **Send it** (or **Copy it**). The link is shown only then; if it's lost,
-tap **new link** next to their name. **turn off** stops a link at once.
+**Make their link**, then **Send it** (or **Copy it**). To send it again later, tap **show link** next to
+their name (it is the same link). **new link** replaces it (the old one stops working) if it went to the wrong person or a phone was lost; **turn off** stops it at once.
 
 Either way, they open it once on their phone, and from then on it remembers them; they can add it
 to their home screen.
