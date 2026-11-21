@@ -747,10 +747,11 @@ function sendWeeklySummary() {
     '<div style="font-family:Arial,sans-serif;font-size:14px;color:#222;max-width:560px">',
     '<h2 style="margin:0 0 4px">' + esc(s.studio) + ' — this week</h2>',
     '<p style="margin:0;color:#555">' + s.visits + ' check-ins across ' + s.sessions.length + ' classes.</p>',
-    section('Who owes', s.owes.map(function (o) {
+    // Worded as a maybe: a payment made in cash, or on Venmo without "Yes, I paid", isn't in the sheet.
+    section('Drop-ins that may not be paid yet', s.owes.map(function (o) {
       return '<li>' + esc(o.name) + ' — ' + esc(o.label) + (o.pending ? ' (includes $' + o.pending + ' they say they sent)' : '') +
         (o.requestUrl ? ' · <a href="' + esc(o.requestUrl) + '">Request on Venmo</a>' : '') + '</li>';
-    })),
+    })) + (s.owes.length ? '<p style="margin:4px 0 0;color:#777">Going by the Payments tab: a payment in cash, or on Venmo without "Yes, I paid", won\'t show until it\'s added there.</p>' : ''),
     s.review.length ? section("To review: came for a class that wasn't on the schedule", s.review.map(function (o) {
       return '<li>' + esc(o.name) + ' — ' + esc(o.day) + (o.note ? ': “' + esc(o.note) + '”' : '') + '</li>';
     })) + '<p style="margin:4px 0 0;color:#777">In the Log tab, fill in the Class and set Status to ok, or void if they didn\'t take one.</p>' : '',
@@ -769,7 +770,8 @@ function sendWeeklySummary() {
   ].join('');
   MailApp.sendEmail({
     to: cfg.ownerEmail || Session.getEffectiveUser().getEmail(),
-    subject: s.studio + ' check-ins: ' + s.visits + ' this week' + (s.owes.length ? ', ' + s.owes.length + ' owing' : ''),
+    name: 'Rhythm check-in', // the sender's display name; it still comes from the account that turned the email on
+    subject: s.studio + ' check-ins: ' + s.visits + ' this week' + (s.owes.length ? ', ' + s.owes.length + ' with drop-ins to check' : ''),
     htmlBody: html,
   });
 }
