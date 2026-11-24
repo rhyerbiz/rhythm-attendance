@@ -521,6 +521,7 @@
         ? '<label for="pemail">Preview: sign in as</label><input id="pemail" type="email" value="' + esc(HINT || 'owner@example.com') + '">' +
           '<button class="btn" id="psign" type="button">Sign in</button>'
         : '<div id="gbtn" style="display:flex;justify-content:center;min-height:44px"></div>') +
+      '<p class="small muted" style="margin:14px 0 0">Google shares only your name and email. <a class="muted" href="privacy.html">Privacy</a></p>' +
       '</div>');
     if (CLIENT_ID === 'preview') {
       on('#psign', 'click', function () { signIn('preview:' + app.querySelector('#pemail').value.trim()); });

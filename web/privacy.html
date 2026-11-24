@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#21ada8">
+  <!-- Linked from Google's sign-in screen (the OAuth branding page), so it may be indexed. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <title>Privacy · Rhythm check-in</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .policy h2 { font-size: 18px; font-weight: 600; margin: 22px 0 6px; }
+    .policy h2:first-of-type { margin-top: 10px; }
+    .policy ul { margin: 0 0 10px; padding-left: 20px; }
+    .policy li { margin: 0 0 6px; }
+    .policy a { color: var(--brand); }
+    @media (prefers-color-scheme: dark) { .policy a { color: var(--teal); } }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <img class="logo" src="logo.png" alt="" width="560" height="153">
+    <span id="studio">Rhythm Dance &amp; Wellness</span>
+  </header>
+  <main>
+    <article class="card policy">
+      <h1>Privacy</h1>
+      <p class="muted small">Rhythm Dance &amp; Wellness check-in · updated November 2026</p>
+      <p>This is the studio's check-in: you scan or tap the sign by the door, and the studio's
+        attendance records fill themselves in. It collects only what that needs.</p>
+
+      <h2>What the studio keeps</h2>
+      <ul>
+        <li><b>Your name and email</b>, the first time you check in.</li>
+        <li><b>Your check-ins:</b> which class, when, and the class price at the time.</li>
+        <li><b>Payments you tell it about</b> ("Yes, I paid" after Venmo), and the packages, passes
+          and monthly plans the studio records for you.</li>
+        <li>Whether you joined or hid the studio's group chat, and whether you saved a passkey.
+          The passkey itself stays on your phone; the studio never receives it.</li>
+        <li>Notes the studio adds, such as a phone number or Venmo name if you give them one.</li>
+        <li>If you buy a class or plan on the studio's website, the purchase is matched to you by
+          the email you check in with.</li>
+      </ul>
+
+      <h2>Staff who sign in with Google</h2>
+      <p>The studio's owner and teachers can sign in to the studio page with Google. Google tells
+        the studio only your email address and name, so it can check you're on its staff list. The
+        studio never sees your password and has no access to your Google account, email, contacts
+        or files. Your phone then keeps a sign-in key so you don't have to sign in every time; it
+        stops working when you sign out, after 90 days unused, or when the studio takes you off its
+        staff list.</p>
+
+      <h2>Where it's kept, and who sees it</h2>
+      <ul>
+        <li>In a Google Sheet run for the studio, with nightly backup copies in the same Google
+          Drive. The studio owner can see it; teachers see who is checked in to today's classes,
+          but not emails, payments or what anyone owes.</li>
+        <li>On your own phone: your name and email (so the next check-in is one tap), and for staff
+          the sign-in key. Clearing the site's data or tapping "Not you?" removes them.</li>
+        <li>This page is hosted on GitHub Pages and the records are handled by Google Apps Script,
+          so GitHub and Google process the requests, as any web host would.</li>
+      </ul>
+
+      <h2>What it doesn't do</h2>
+      <ul>
+        <li>No ads, no tracking, no analytics and no cookies.</li>
+        <li>Your information is never sold or shared for marketing. It's used only to run the
+          studio's attendance and class payments.</li>
+        <li>Venmo opens only when you tap Pay; this site doesn't see your Venmo account.</li>
+      </ul>
+
+      <h2>Your choices</h2>
+      <p>Ask the studio, in person or through <a href="https://www.rhythmdw.com">rhythmdw.com</a>,
+        to see, correct or delete what it holds about you. Attendance and payment records may be
+        kept as long as the studio needs them for its accounts.</p>
+    </article>
+  </main>
+</body>
+</html>

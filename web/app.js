@@ -358,7 +358,8 @@
         '<input id="email" name="email" type="email" inputmode="email" autocomplete="' + (askName ? 'email' : 'email webauthn') + '" autocapitalize="off" required value="' + esc(prefill.email) + '"' + (askName ? '' : ' autofocus') + '>' +
         (error ? '<div class="error" role="alert">' + esc(error) + '</div>' : '') +
         '<button class="btn" type="submit">Check in</button>' +
-        '<p class="small muted" style="margin-top:12px">Use the same email you book or pay with, so your classes and packages line up.</p>' +
+        '<p class="small muted" style="margin-top:12px">Use the same email you book or pay with, so your classes and packages line up. ' +
+          '<a class="muted" href="privacy.html">Privacy</a></p>' +
       '</form>'
     );
     // A returning student whose phone forgot them: offer their passkey, if this phone can have one.
