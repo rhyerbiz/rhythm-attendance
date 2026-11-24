@@ -177,9 +177,18 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     `google-signin`, alongside links): the Staff tab (Email, Name, Role, Active) says who may sign
     in; `op: 'signIn'` sends Google's ID token, `io.verifyGoogle` (Code.gs, tokeninfo + aud =
     Script Properties `googleClientId`, set by menu "Turn on Google sign-in…") checks it, and the
-    answer is a 90-day session key (Script Properties `staffSessions`) sent as `req.session`.
-    `sessionWho_` re-reads Staff on every request, so removal is immediate. Off until both the
-    property and `config.js` `googleClientId` are set. The name goes into Log → `By`
+    answer is a session key (Script Properties `staffSessions`) sent as `req.session`, good for 90
+    days from last use (`renewSession_`, saved at most weekly). `sessionWho_` re-reads Staff on
+    every request, so removal is immediate. Off until both the property and `config.js`
+    `googleClientId` are set. **The sign is staff's way in:** `checkin_` looks the email up in Staff
+    (`staffForEmail_`, only while sign-in is on): staff who aren't students get `status: 'staff'`
+    (the page offers the studio page; no student row unless they give a name); students who are
+    staff get `staff: true` (an "I'm teaching …" button → `owner.html?teach=<ClassID>&c=<checkinId>`
+    → op `teaching`, which voids their own check-in to it). Schedule → `Teacher` (or Wix's staff on
+    the session, `wixTeacher_`) makes `teaches_` skip their auto check-in: `status: 'teaching'`.
+    app.js sends a phone holding a studio-page session or link (same-origin localStorage) straight
+    to owner.html when no student is remembered. The sign-in email hint goes over in
+    sessionStorage, never the URL. The name goes into Log → `By`
     on each check-in they make (blank = the student themselves; the Sheet menu writes the user's
     email), and into Note on removals and sort-outs. The key travels in the link's `#k=` fragment,
     is kept in the phone's localStorage, and is never in the Sheet or the repo. **No money on purpose:**

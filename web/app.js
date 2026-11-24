@@ -21,6 +21,31 @@
   var STUDIO_KEY = 'rhythm.studio';
   var app = document.getElementById('app');
 
+  // ---------------------------------------------------------------- staff
+  // The studio page (owner.html) is on this same site, so this page can see whether the phone
+  // holds a studio-page link or a Google sign-in from it. That's all it looks at: what such a
+  // phone may do is still decided by the server, on the studio page.
+  function hasStudioAccess() {
+    try { return !!(localStorage.getItem('rhythm.staffSession') || localStorage.getItem('rhythm.ownerKey')); } catch (e) { return false; }
+  }
+  // `extra`: hint (the email to sign in with), teach (a ClassID to take attendance for), c (their
+  // check-in to it). The email is handed over in sessionStorage, never in the address, so it
+  // doesn't end up in the web host's logs.
+  function studioUrl(extra) {
+    extra = Object.assign({}, extra);
+    if (extra.hint) {
+      try { sessionStorage.setItem('rhythm.signinHint', extra.hint); } catch (e) { /* no hint */ }
+      if (MOCK) extra.signin = '1'; // the preview's pretend Google
+      delete extra.hint;
+    }
+    var q = new URLSearchParams();
+    if (params.has('dev')) q.set('dev', '');
+    Object.keys(extra).forEach(function (k) { if (extra[k]) q.set(k, extra[k]); });
+    var s = q.toString().replace(/=(&|$)/g, '$1');
+    return 'owner.html' + (s ? '?' + s : '');
+  }
+  function toStudio(extra) { location.assign(studioUrl(extra)); }
+
   // ------------------------------------------------------------- storage
   // Wrapped: private browsing and blocked storage throw. Without storage the
   // page still works; it just asks for the email each time.
@@ -100,11 +125,59 @@
     if (el) el.addEventListener(evt, fn);
   }
   var CHECK = '<div class="check" aria-hidden="true"><svg viewBox="0 0 52 52"><path d="M14 27 l8 8 l17 -18"/></svg></div>';
-  function notYou() {
-    return '<p class="foot"><button class="linkish" id="notyou">Not you? Switch person</button></p>';
+  // `res.staff`: they're on the studio's Staff tab, so they also get a way to the studio page.
+  function notYou(res) {
+    return '<p class="foot">' + (res && res.staff ? '<a class="linkish" id="studio" href="' + esc(studioUrl({ hint: res.student.email })) + '">Studio page</a> · ' : '') +
+      '<button class="linkish" id="notyou">Not you? Switch person</button></p>';
   }
   function bindNotYou() {
     on('#notyou', 'click', function () { forgetMe(); viewRegister({}); });
+  }
+
+  // On the Staff tab but not a student (the owner): the studio page, or check in as a student.
+  function viewStaff(email) {
+    render(
+      '<div class="card center">' +
+        '<h1>Studio page</h1>' +
+        '<p>' + esc(email) + ' is on the studio\'s staff list.</p>' +
+        '<a class="btn" id="gostudio" href="' + esc(studioUrl({ hint: email })) + '">Open the studio page</a>' +
+        '<p class="small muted" style="margin-top:12px">You\'ll sign in with Google the first time. After that, this sign opens it straight away.</p>' +
+      '</div>' +
+      '<div class="card center"><p class="small muted" style="margin:0 0 4px">Taking a class yourself?</p>' +
+        '<button class="btn secondary" id="asstudent" type="button">Check in as a student</button></div>' +
+      notYou()
+    );
+    on('#asstudent', 'click', function () { viewRegister({ email: email }, '', true); });
+    bindNotYou();
+  }
+
+  // The schedule says they teach a class that's open now, so they weren't checked in to it.
+  function viewTeaching(me, res) {
+    var c = res.teaching[0];
+    var others = (res.options || []).filter(function (o) { return !res.teaching.some(function (t) { return t.id === o.id; }); });
+    render(
+      '<div class="card center">' +
+        '<h1>Teaching ' + esc(c.name) + '</h1>' +
+        '<p class="muted">' + esc(c.time) + '. You\'re not checked in to it, so it costs you nothing.</p>' +
+        '<a class="btn" href="' + esc(studioUrl({ hint: me.email, teach: c.id })) + '">Take attendance</a>' +
+      '</div>' +
+      '<div class="card"><p style="margin:0 0 4px"><b>Taking a class yourself?</b></p>' +
+        pickerHtml(res.teaching.concat(others), 'Check in') + '</div>' +
+      notYou(res)
+    );
+    bindPicker(me, 'Check in');
+    bindNotYou();
+  }
+
+  // After a staff member's own check-in: one tap if it's a class they're teaching instead.
+  function teachingHtml(res) {
+    if (!res.staff || !res.checkins || !res.checkins.length) return '';
+    return '<div class="card center"><p class="small muted" style="margin:0 0 4px">Teaching ' + (res.checkins.length > 1 ? 'one of these' : 'it') + ' instead?</p>' +
+      res.checkins.map(function (c) {
+        return '<a class="btn secondary" href="' + esc(studioUrl({ hint: res.student.email, teach: c.id, c: c.checkinId })) + '">I\'m teaching ' + esc(c.name) + '</a>';
+      }).join('') +
+      (hasStudioAccess() ? '' : '<p class="small muted" style="margin:10px 0 0">You\'ll sign in with Google once; your check-in is taken off.</p>') +
+      '</div>';
   }
 
   // "Join our group chat". The API decides whether and how to show it (res.chatMode: 'full' for a
@@ -409,7 +482,7 @@
         '<button class="btn secondary" id="anyway">I\'m here for a class</button>' +
       '</div>' +
       chatHtml(res) +
-      notYou()
+      notYou(res)
     );
     if (later.length) bindPicker(me, 'Check in early');
     on('#anyway', 'click', function () {
@@ -428,7 +501,7 @@
         '<p class="small muted">It isn\'t on today\'s schedule, so the studio will check which class it was and add it to your record.</p>' +
       '</div>' +
       chatHtml(res) +
-      notYou()
+      notYou(res)
     );
     bindChat(res);
     bindNotYou();
@@ -500,8 +573,9 @@
       (more.length
         ? '<div class="card"><p style="margin:0 0 4px"><b>Taking another class today?</b></p>' + pickerHtml(more, 'Check in') + '</div>'
         : '') +
+      teachingHtml(res) +
       chatHtml(res) +
-      notYou()
+      notYou(res)
     );
     if (more.length) bindPicker(me, 'Check in', list.map(function (c) { return c.id; }));
     bindChat(res);
@@ -563,6 +637,9 @@
           return viewRegister({ name: me.name, email: me.email }, res.needName ? '' : res.error, !!res.needName);
         }
         if (!res.ok) return viewError(res.error || 'Something went wrong.', retry);
+        if (res.status === 'staff') { forgetMe(); return hasStudioAccess() ? toStudio() : viewStaff(res.email); }
+        // Their own class: a phone that already opens the studio page goes straight to its attendance.
+        if (res.status === 'teaching') return hasStudioAccess() ? toStudio({ teach: res.teaching[0].id }) : viewTeaching(me, res);
         if (res.status === 'choose') return viewChoose(me, res);
         if (res.status === 'noClass') return viewNoClass(me, res);
         if (res.status === 'unscheduled') return viewUnscheduled(me, res);
@@ -597,6 +674,8 @@
     }
     var me = loadMe();
     if (me && me.email) checkin(me);
+    // Staff who aren't students here: the sign is their way to the studio page.
+    else if (hasStudioAccess()) toStudio();
     else viewRegister({});
   }
 

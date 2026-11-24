@@ -217,13 +217,27 @@ to their home screen.
 
 ### Google sign-in (instead of links, or alongside them)
 
-With it on, staff open the plain page address (`…/owner.html`) and tap **Sign in with Google**.
-There is no link to send or keep: who may sign in is the **Staff** tab (Email, Name, Role =
+With it on, **the sign by the door is the way in**. Staff scan it like a student and type their
+email; the page sees they're on the staff list and offers the studio page, where they **Sign in
+with Google** once. After that, scanning the sign on that phone opens the studio page straight
+away. There is no link to send or keep: who may sign in is the **Staff** tab (Email, Name, Role =
 `admin` or `teacher`, Active). An admin adds and removes teachers on the page's **Team** tab (by
 their Google email); admins are typed into the Staff tab. Links keep working alongside it.
 
-- The server has Google check each sign-in, then gives that phone its own session for 90 days,
-  so nobody signs in every visit. Taking someone off Staff (Active = no, or **remove** on the
+Teachers who also take classes:
+- Their scan still checks them in with no tap. The answer adds **I'm teaching …**: one tap takes
+  their own check-in off (it costs them nothing; the Log row's Note says so) and opens that class's
+  attendance.
+- If the schedule says who teaches a class, they don't even need that tap. Put their name or
+  email in the **Teacher** column of the Schedule tab (several: separate with commas; "Dee" matches
+  "Dee Ray"). Their scan during that class then opens its attendance instead of checking them in,
+  with "Check in" still offered in case they're taking it. The Wix sync fills Teacher from the
+  staff Wix assigns to each session, if Wix sends it (**Test the Wix connection** shows a Teacher
+  column). It's optional: without it, the button above does the job.
+
+- The server has Google check each sign-in, then gives that phone its own session, good until
+  90 days after it was last used, so someone who comes in regularly never signs in again. If the
+  phone forgets it (iPhones clear a site's storage after a while unused), they sign in again. Taking someone off Staff (Active = no, or **remove** on the
   Team tab) locks them out at once, on every phone. **Sign out** at the bottom of the page ends
   that phone's session.
 - Someone whose email isn't a Gmail address can still sign in: they make a Google account for
@@ -245,7 +259,8 @@ their Google email); admins are typed into the Staff tab. Links keep working alo
    Until then the page shows no sign-in button.
 
 To try it in the preview without Google: open `owner.html?signin` and sign in as
-`owner@example.com` (the preview's pretend admin).
+`owner@example.com` (the preview's pretend admin). From the sign: check in as `owner@example.com`,
+or as `teacher@example.com` with the "One class" scenario (the preview teacher teaches Dance 101).
 
 ## Day to day, for the owner
 

@@ -22,6 +22,13 @@
   // Google sign-in is offered once config.js has this copy's client ID (the preview pretends, with ?signin).
   var CLIENT_ID = MOCK ? (params.has('signin') ? 'preview' : '') : (ENV.googleClientId || '');
   var MOCK_KEY = 'previewownerkeypreviewowner'; // matches mock.js
+  // From the sign (app.js): the email they gave there, for Google's account picker (sessionStorage,
+  // never the address), and "I'm teaching" (?teach=ClassID&c=their own check-in to take off).
+  var HINT = (function () { try { return sessionStorage.getItem('rhythm.signinHint') || ''; } catch (e) { return ''; } })();
+  var TEACH = { classId: params.get('teach') || '', checkinId: params.get('c') || '' };
+  if (TEACH.classId) {
+    try { history.replaceState(null, '', location.pathname + location.search.replace(/[?&](teach|c)=[^&]*/g, '').replace(/^&/, '?') + location.hash); } catch (e) { /* fine */ }
+  }
   var app = document.getElementById('app');
   var tabs = document.getElementById('tabs');
 
@@ -257,11 +264,12 @@
   }
 
   // The attendance checklist for one class: its usual students first, then everyone else.
-  function viewRoster(classId) {
+  // `msg`: a note at the top (e.g. that their own check-in to it was taken off).
+  function viewRoster(classId, msg) {
     if (!state.students) {
       busy();
-      return loadStudents().then(function (res) { if (handled(res)) viewRoster(classId); })
-        .catch(function () { viewError('Couldn\'t reach the studio\'s records.', function () { viewRoster(classId); }); });
+      return loadStudents().then(function (res) { if (handled(res)) viewRoster(classId, msg); })
+        .catch(function () { viewError('Couldn\'t reach the studio\'s records.', function () { viewRoster(classId, msg); }); });
     }
     var c = state.today.classes.filter(function (x) { return x.id === classId; })[0];
     if (!c) return draw();
@@ -279,7 +287,7 @@
         '<input type="checkbox" value="' + esc(s.id) + '"' + (here ? ' checked disabled' : '') + '>' +
         '<span class="pname">' + esc(s.name) + '</span>' + (here ? '<span class="time">in</span>' : '') + '</label>';
     };
-    render('<p><button class="linkish" id="back" type="button">‹ Today</button></p>' +
+    render(noteHtml(msg) + '<p><button class="linkish" id="back" type="button">‹ Today</button></p>' +
       '<div class="headline"><h1>' + esc(c.name) + '</h1><p class="muted small">' + esc(c.time) + ' · tick who\'s here</p></div>' +
       '<input id="rfind" type="search" autocomplete="off" placeholder="Find a name">' +
       (usual.length ? '<p class="group">Usually in this class</p>' + usual.map(row).join('') : '') +
@@ -510,7 +518,7 @@
     render(noteHtml(msg, bad) + '<div class="card center"><h1>Studio page</h1>' +
       '<p>Sign in with the Google account the studio has on its staff list.</p>' +
       (CLIENT_ID === 'preview'
-        ? '<label for="pemail">Preview: sign in as</label><input id="pemail" type="email" value="owner@example.com">' +
+        ? '<label for="pemail">Preview: sign in as</label><input id="pemail" type="email" value="' + esc(HINT || 'owner@example.com') + '">' +
           '<button class="btn" id="psign" type="button">Sign in</button>'
         : '<div id="gbtn" style="display:flex;justify-content:center;min-height:44px"></div>') +
       '</div>');
@@ -519,7 +527,7 @@
       return;
     }
     loadGoogle().then(function () {
-      google.accounts.id.initialize({ client_id: CLIENT_ID, callback: function (r) { signIn(r.credential); }, auto_select: true });
+      google.accounts.id.initialize({ client_id: CLIENT_ID, callback: function (r) { signIn(r.credential); }, auto_select: true, login_hint: HINT || undefined });
       var box = app.querySelector('#gbtn');
       if (box) google.accounts.id.renderButton(box, { theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill' });
     }).catch(function () {
@@ -534,7 +542,8 @@
       if (res && res.ok && res.session) {
         setSession(res.session);
         setRole(res);
-        return show('today');
+        try { sessionStorage.removeItem('rhythm.signinHint'); } catch (e) { /* fine */ }
+        return TEACH.classId ? teach() : show('today');
       }
       try { google.accounts.id.disableAutoSelect(); } catch (e) { /* preview */ }
       viewSignIn((res && res.error) || 'That sign-in didn\'t work. Please try again.', true);
@@ -658,7 +667,24 @@
     }
     setStudio(CFG.studioName);
     if (!key && !session) return viewNeedKey();
+    if (TEACH.classId) return teach();
     show('today');
+  }
+
+  // "I'm teaching this class" (from the sign): their own check-in to it comes off, then its attendance.
+  function teach() {
+    var t = TEACH;
+    TEACH = { classId: '', checkinId: '' };
+    busy();
+    setTab('today');
+    api('teaching', { classId: t.classId, checkinId: t.checkinId }).then(function (res) {
+      if (!handled(res)) return;
+      state.today = res;
+      setExtrasCount();
+      viewRoster(t.classId, res.done);
+    }).catch(function () {
+      viewError("Couldn't reach the studio's records. Check your signal and try again.", function () { TEACH = t; teach(); });
+    });
   }
 
   if (MOCK) {

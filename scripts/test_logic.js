@@ -1287,12 +1287,56 @@ test('studio page: Google sign-in for people on the Staff tab, alongside the lin
   call({ op: 'addStaff', session: caress.session, email: 'dee@example.com', name: 'Dee Ray' });
   assert.strictEqual(book.staff.filter((r) => /dee/i.test(r.Email)).length, 1);
   assert.strictEqual(call({ op: 'today', session: dee.session }).role, 'teacher');
-  // Signing out ends that phone's session only; sessions run out after 90 days.
+  // Signing out ends that phone's session only.
   assert.strictEqual(call({ op: 'signOut', session: dee.session }).ok, true);
   assert.strictEqual(call({ op: 'today', session: dee.session }).status, 'needKey');
   assert.strictEqual(call({ op: 'today', session: caress.session }).role, 'admin');
-  assert.strictEqual(call({ op: 'today', session: caress.session }, '2027-01-31').role, 'admin');
-  assert.strictEqual(call({ op: 'today', session: caress.session }, '2027-02-01').status, 'needKey');
+  // Sessions run 90 days from last use, saved at most once a week (not on every request).
+  call({ op: 'today', session: caress.session }, '2026-11-05');
+  assert.strictEqual(sessions[caress.session].until, '2027-01-31');
+  call({ op: 'today', session: caress.session }, '2026-11-12');
+  assert.strictEqual(sessions[caress.session].until, '2027-02-10');
+  assert.strictEqual(call({ op: 'today', session: caress.session }, '2027-02-10').role, 'admin');
+  assert.strictEqual(sessions[caress.session].until, '2027-05-11');
+  assert.strictEqual(call({ op: 'today', session: caress.session }, '2027-05-12').status, 'needKey');
+});
+
+test('the sign recognises staff: the owner is sent to sign in, a teacher\'s own class costs nothing', () => {
+  const book = makeBook({ staff: [
+    { Email: 'caress@example.com', Name: 'Caress Brown', Role: 'admin', Active: '' },
+    { Email: 'dee@example.com', Name: 'Dee', Role: 'teacher', Active: '' },
+  ] });
+  book.schedule[0].Teacher = 'Dee Ray'; // Salsa 1, Mon 7pm
+  const io = (google) => Object.assign(makeIo(), google === false ? {} : { verifyGoogle: () => null }, { update: (t, r, f) => Object.assign(r, f) });
+  const scan = (req, hhmm, google) => fn('handleRequest_')(book, Object.assign({ action: 'checkin', code: { t: 'static' } }, req), at(MON, hhmm || '19:10'), io(google));
+  // The owner types her email: no name step, no student row; the page sends her on to sign in.
+  same([scan({ email: 'Caress@Example.com' }).status, book.students.length], ['staff', 0]);
+  // With Google sign-in off, nothing is different.
+  assert.strictEqual(scan({ email: 'caress@example.com' }, '19:10', false).needName, true);
+  // Dee teaches Salsa 1: her scan checks her in to nothing and says so.
+  scan({ email: 'dee@example.com', name: 'Dee Ray', classIds: ['K2'] }, '19:05'); // a student too (Bachata 2, early)
+  const t = scan({ email: 'dee@example.com' });
+  same([t.status, t.staff, t.teaching.map((c) => c.id)], ['teaching', true, ['K1']]);
+  assert.strictEqual(book.log.filter((l) => l.ClassID === 'K1').length, 0);
+  // "Check me in anyway" names the class, and that works as for anyone.
+  const anyway = scan({ email: 'dee@example.com', classIds: ['K1'] });
+  same([anyway.status, anyway.staff], ['ok', true]);
+  // A class she doesn't teach is a normal touchless check-in.
+  book.schedule[0].Teacher = 'Caress';
+  book.log = book.log.filter((l) => l.ClassID !== 'K1');
+  assert.strictEqual(scan({ email: 'dee@example.com' }).status, 'ok');
+  // "I'm teaching this class" on the studio page takes her own check-in back off.
+  const sio = Object.assign(ownerIo(), { ownerKeys: () => ({}), teacherKeys: () => ({}),
+    sessions: () => ({ deesessiondeesessiondee: { email: 'dee@example.com', until: '2027-01-01' } }), saveSessions: () => {} });
+  const res = fn('handleRequest_')(book, { action: 'owner', op: 'teaching', session: 'deesessiondeesessiondee', classId: 'K1' }, at(MON, '19:12'), sio);
+  same([res.ok, res.role, /teaching it/.test(res.done)], [true, 'teacher', true]);
+  const row = book.log.find((l) => l.ClassID === 'K1');
+  same([row.Status, /teaching/.test(row.Note)], ['void', true]);
+  // Names match word by word; emails match too; a blank Teacher matches nobody.
+  const teaches = (name, email, teacher) => fn('teaches_')({ name, email }, { teacher });
+  same([teaches('Caress Brown', 'c@x.com', 'Caress'), teaches('Caress', 'c@x.com', 'Caress Brown, Dee'),
+    teaches('Dee', 'd@x.com', 'Deborah'), teaches('Dee', 'd@x.com', 'D@X.com'), teaches('Dee', 'd@x.com', '')],
+  [true, true, false, true, false]);
 });
 
 // The page's own scripts aren't run here, but a syntax error in one blanks the live page.

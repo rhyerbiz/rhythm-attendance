@@ -6,7 +6,9 @@ window.MockBackend = (function () {
   'use strict';
   var KEY = 'rhythm.mockBook';
   // Who can sign in to the preview's studio page (owner.html?signin): any email typed there that's on this list.
-  var PREVIEW_STAFF = [{ Email: 'owner@example.com', Name: 'Preview Owner', Role: 'admin', Active: 'yes' }];
+  // The teacher teaches Dance 101 ("one class"), so checking in as teacher@example.com shows the teaching screen.
+  var PREVIEW_STAFF = [{ Email: 'owner@example.com', Name: 'Preview Owner', Role: 'admin', Active: 'yes' },
+    { Email: 'teacher@example.com', Name: 'Preview Teacher', Role: 'teacher', Active: 'yes' }];
   var memory = null;
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -25,7 +27,7 @@ window.MockBackend = (function () {
     var tomorrow = DAY_LABELS[dowOf_(addDays_(now.date, 1))];
     var base = Math.ceil(now.minutes / 5) * 5;
     var rows = [];
-    if (scenario === 'one') rows.push({ ClassID: 'K1', Class: 'Dance 101', Days: today, Start: hhmm(base + 10), Minutes: 60 });
+    if (scenario === 'one') rows.push({ ClassID: 'K1', Class: 'Dance 101', Days: today, Start: hhmm(base + 10), Minutes: 60, Teacher: 'Preview Teacher' });
     if (scenario === 'two') {
       rows.push({ ClassID: 'K3', Class: 'Company Practice', Days: today, Start: hhmm(base + 10), Minutes: 60, Price: 0 });
       rows.push({ ClassID: 'K1', Class: 'Dance 101', Days: today, Start: hhmm(base + 25), Minutes: 60 });

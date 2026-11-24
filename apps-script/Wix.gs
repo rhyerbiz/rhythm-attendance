@@ -77,6 +77,12 @@ function wixServices_() {
   return out;
 }
 
+/** Who teaches a session: its staff resources' names, if Wix gives them ('' otherwise; it's optional). */
+function wixTeacher_(ev) {
+  return (ev.resources || []).filter(function (r) { return String(r.type || '').toUpperCase() === 'STAFF' && r.name; })
+    .map(function (r) { return String(r.name); }).join(', ');
+}
+
 /** Calendar events between two local times ('yyyy-MM-ddTHH:mm:ss') in the studio's time zone. */
 function wixEvents_(fromLocal, toLocal, tz) {
   const out = [];
@@ -170,6 +176,7 @@ function wixSyncSchedule() {
       return {
         title: ev.title, serviceId: ev.externalScheduleId, type: ev.type, status: ev.status,
         start: (ev.adjustedStart || ev.start || {}).localDate, end: (ev.adjustedEnd || ev.end || {}).localDate,
+        teacher: wixTeacher_(ev),
       };
     });
     rows = wixScheduleRows_(sessions, services, configFrom_(readBook_().config));
@@ -336,11 +343,11 @@ function wixTest() {
   const day = 24 * 60 * 60 * 1000, now = new Date();
   const from = Utilities.formatDate(now, tz, "yyyy-MM-dd'T'00:00:00");
   const to = Utilities.formatDate(new Date(now.getTime() + 7 * day), tz, "yyyy-MM-dd'T'23:59:59");
-  section('Sessions in the next 7 days (Calendar)', ['Day', 'Start', 'End', 'Title', 'Type', 'Status', 'Service ID'], function () {
+  section('Sessions in the next 7 days (Calendar)', ['Day', 'Start', 'End', 'Title', 'Type', 'Status', 'Teacher', 'Service ID'], function () {
     return wixEvents_(from, to, tz).map(function (ev) {
       const start = ((ev.adjustedStart || ev.start || {}).localDate || '').split('T');
       const end = ((ev.adjustedEnd || ev.end || {}).localDate || '').split('T');
-      return [start[0] || '', (start[1] || '').slice(0, 5), (end[1] || '').slice(0, 5), ev.title || '', ev.type || '', ev.status || '', ev.externalScheduleId || ''];
+      return [start[0] || '', (start[1] || '').slice(0, 5), (end[1] || '').slice(0, 5), ev.title || '', ev.type || '', ev.status || '', wixTeacher_(ev), ev.externalScheduleId || ''];
     });
   });
 

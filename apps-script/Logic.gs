@@ -16,7 +16,8 @@ const APP_VERSION = '1.0.0';
 // Columns may be reordered or added in the Sheet; renaming one breaks it.
 const SCHEMA = {
   Config: ['Key', 'Value', 'Notes'],
-  Schedule: ['ClassID', 'Class', 'Days', 'Start', 'Minutes', 'Price', 'Active', 'FirstDate', 'LastDate'],
+  // Teacher (optional): who teaches it, by name or email; it lets a teacher's own scan skip their check-in.
+  Schedule: ['ClassID', 'Class', 'Days', 'Start', 'Minutes', 'Price', 'Active', 'FirstDate', 'LastDate', 'Teacher'],
   Students: ['StudentID', 'Name', 'Email', 'Phone', 'Venmo', 'FirstSeen', 'Notes', 'Chat', 'Passkey'],
   // By: who checked them in when it wasn't the student (an owner page link's name, or the Sheet
   // menu user's email). Blank = the student did it themselves.
@@ -158,6 +159,7 @@ function classFrom_(r, cfg) {
     active: !isNo_(r.Active),
     first: dayStr_(r.FirstDate),
     last: dayStr_(r.LastDate),
+    teacher: str_(r.Teacher),
   };
 }
 
@@ -184,7 +186,7 @@ const WIX_SCHEDULE_HEADERS = SCHEMA.Schedule.concat(['WixService']);
 /**
  * Wix calendar sessions → rows for the "Wix schedule" tab, one per session,
  * each on its own date (FirstDate = LastDate), so classIsOn_() needs nothing new.
- *   sessions: [{ title, serviceId, start: 'yyyy-MM-ddTHH:mm[:ss]', end, status, type }]
+ *   sessions: [{ title, serviceId, start: 'yyyy-MM-ddTHH:mm[:ss]', end, status, type, teacher }]
  *   services: { <serviceId>: { name, price: number|null } }  (price null = use dropInPrice)
  * Cancelled sessions, appointments and classes matching cfg.wixSkip are left out.
  * The ClassID is the same for a service at the same start time every week, so
@@ -219,6 +221,7 @@ function wixScheduleRows_(sessions, services, cfg) {
       Active: 'yes',
       FirstDate: day,
       LastDate: day,
+      Teacher: str_(s.teacher),
       WixService: str_(s.serviceId),
     });
   });
@@ -812,7 +815,7 @@ function noteWith_(note, text) { return str_(note) ? str_(note) + ' · ' + text 
 // everything. A teacher link (→ teacherKeys, made by an admin on the page's Team tab) opens only
 // check-ins: Today without money, Take attendance and remove. Teachers never see emails, plans,
 // passes or balances, and the server refuses everything else for them (not just hidden buttons).
-const TEACHER_OPS = ['today', 'students', 'checkin', 'checkinMany', 'undo', 'signOut'];
+const TEACHER_OPS = ['today', 'students', 'checkin', 'checkinMany', 'undo', 'signOut', 'teaching'];
 
 /** Whose link this is and what it may do: {name, role: 'admin'|'teacher'}, or null. */
 function staffWho_(given, admins, teachers) {
@@ -831,6 +834,7 @@ function ownerRequest_(book, cfg, req, now, io) {
   if (!staff) {
     return { ok: false, status: 'needKey', error: "This link isn't valid any more. Please ask for a new one." };
   }
+  if (staff.session) renewSession_(staff.session, now, io);
   if (staff.role !== 'admin' && TEACHER_OPS.indexOf(op) < 0) {
     return { ok: false, error: 'Only an admin can do that.', role: staff.role, who: staff.name };
   }
@@ -853,6 +857,7 @@ function staffOp_(book, cfg, req, now, io, staff, op) {
   if (op === 'checkinMany') return ownerCheckinMany_(book, cfg, req, now, io, who);
   if (op === 'undo') return ownerUndo_(book, cfg, req, now, io, who);
   if (op === 'signOut') return staffSignOut_(req, now, io);
+  if (op === 'teaching') return staffTeaching_(book, cfg, req, now, io, staff);
   // The Team tab: links, and the people who sign in with Google.
   const withStaff = function (res) { res.staff = staffForTeam_(book); return Object.assign(team_(io), res); };
   if (op === 'team') return withStaff({});
@@ -966,7 +971,66 @@ function sessionWho_(book, given, sessions, today) {
   Object.keys(sessions || {}).forEach(function (k) { if (ownerKeyOk_(given, k)) found = sessions[k]; });
   if (!found || !(str_(found.until) >= today)) return null;
   const s = staffByEmail_(book, found.email);
-  return s ? { name: staffLabel_(s), role: s.role, email: s.email } : null;
+  return s ? { name: staffLabel_(s), role: s.role, email: s.email, session: { key: given, until: str_(found.until) } } : null;
+}
+
+/**
+ * Sessions run STAFF_SESSION_DAYS from last use, so someone who comes in at least that often is
+ * never asked to sign in again. Saved at most once a week per phone, not on every request.
+ */
+function renewSession_(session, now, io) {
+  const until = addDays_(now.date, STAFF_SESSION_DAYS);
+  if (session.until >= addDays_(now.date, STAFF_SESSION_DAYS - 7) || !io.saveSessions) return;
+  const sessions = liveSessions_(io.sessions(), now.date);
+  Object.keys(sessions).forEach(function (k) { if (ownerKeyOk_(session.key, k)) sessions[k].until = until; });
+  io.saveSessions(sessions);
+}
+
+/** Someone on the Staff tab with this email, while Google sign-in is on (else null). */
+function staffForEmail_(book, io, email) {
+  return io.verifyGoogle ? staffByEmail_(book, email) : null;
+}
+
+/**
+ * Whether this staff member teaches class c: its Teacher (Schedule, or Wix's staff for the session;
+ * several are separated by commas) names them. "Caress" matches "Caress Brown" and the reverse,
+ * word by word; a blank Teacher matches nobody.
+ */
+function teaches_(staff, c) {
+  if (!staff || !c.teacher) return false;
+  const words = function (v) { return str_(v).toLowerCase().replace(/[^a-z0-9@.\s]/g, ' ').split(/\s+/).filter(Boolean); };
+  const mine = [words(staff.name), [cleanEmail_(staff.email)]].filter(function (w) { return w.length && w[0]; });
+  return c.teacher.split(',').some(function (t) {
+    const theirs = words(t);
+    if (!theirs.length) return false;
+    return mine.some(function (m) {
+      const n = Math.min(m.length, theirs.length);
+      for (let i = 0; i < n; i++) if (m[i] !== theirs[i]) return false;
+      return true;
+    });
+  });
+}
+
+/**
+ * op 'teaching' (from "I'm teaching this class"): takes the staff member's own check-in to that
+ * class off (they're teaching it, so it costs them nothing), then answers with Today.
+ */
+function staffTeaching_(book, cfg, req, now, io, staff) {
+  const me = staff.email ? findStudentByEmail_(book, staff.email) : null;
+  const classId = str_(req.classId);
+  // By their email (a Google sign-in), or by the check-in the page just made (a link has no email;
+  // staff can remove any of today's check-ins anyway).
+  const mine = liveLog_(book).filter(function (l) {
+    return dayStr_(l.ClassDate) === now.date && str_(l.ClassID) === classId &&
+      ((me && str_(l.StudentID) === str_(me.StudentID)) || (str_(req.checkinId) && str_(l.CheckinID) === str_(req.checkinId)));
+  });
+  mine.forEach(function (l) {
+    l.Status = 'void';
+    l.Note = noteWith_(l.Note, 'teaching, not taking it (' + str_(staff.name) + ' ' + fmtTime_(now.minutes) + ')');
+    io.update('Log', l, { Status: 'void', Note: l.Note });
+  });
+  return Object.assign(ownerToday_(book, cfg, now), { wrote: mine.length > 0,
+    done: mine.length ? 'Your own check-in to ' + str_(mine[0].Class) + " was taken off: you're teaching it." : '' });
 }
 
 /** Sessions still running on `today` (expired ones are dropped whenever the list is saved). */
@@ -1365,9 +1429,15 @@ function checkin_(book, cfg, req, now, io, opts) {
     return { ok: true, studio: cfg.studioName, status: 'reset', cleared: who ? resetTester_(book, who, now, io) : 0 };
   }
 
+  // Someone on the Staff tab (only while Google sign-in is on; never for the owner's own check-ins).
+  const staff = opts.source ? null : staffForEmail_(book, io, email);
+
   // A returning student only needs their email; the name is asked for the first time only.
   let student = findStudentByEmail_(book, email);
   let isNew = false;
+  // Staff who aren't students (the owner): the page sends them on to sign in to the studio page.
+  // With a name (they chose to check in as a student after all) they're added like anyone else.
+  if (!student && staff && !name) return { ok: true, studio: cfg.studioName, status: 'staff', email: email };
   if (!student) {
     // A passkey brought the email: send it back so the page can show it, filled in, with the name box.
     if (!name) return { ok: false, status: 'needDetails', needName: true, error: 'Please enter your name.', email: req.passkey ? email : undefined };
@@ -1387,6 +1457,7 @@ function checkin_(book, cfg, req, now, io, opts) {
   const base = { ok: true, studio: cfg.studioName, student: studentView_(student), isNew: isNew,
     chatLink: chatMode ? cfg.chatLink : '', chatMode: chatMode,
     hasPasskey: !!str_(student.Passkey),
+    staff: !!staff, // the page offers Google sign-in, so this sign opens the studio page for them too
     // Offer to save one only to a returning student without one: a first visit has enough on it.
     passkeyOffer: !str_(student.Passkey) && liveLog_(book).some(function (l) { return str_(l.StudentID) === str_(student.StudentID); }) };
   // A test link (dev only) swaps the real schedule for its scenario's pretend classes, on a
@@ -1453,6 +1524,10 @@ function checkin_(book, cfg, req, now, io, opts) {
         later: avail.filter(function (a) { return !doneRow(a.klass); }).map(option),
       });
     }
+    // A teacher's own class (Schedule or Wix says so): no check-in, so it costs them nothing. The
+    // page opens the studio page on it, or offers sign-in, or lets them check in anyway.
+    const teaching = open.filter(function (a) { return teaches_(staff, a.klass) && !doneRow(a.klass); });
+    if (teaching.length) return Object.assign(base, { status: 'teaching', teaching: teaching.map(option), options: avail.map(option) });
     const remaining = open.filter(function (a) { return !doneRow(a.klass); });
     if (remaining.length > 1) return Object.assign(base, { status: 'choose', options: avail.map(option) });
     picked = [remaining[0] || open[open.length - 1]];
