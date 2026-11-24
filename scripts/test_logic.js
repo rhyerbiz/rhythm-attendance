@@ -1214,7 +1214,11 @@ test('studio page: a teacher link does check-ins only, and an admin makes and tu
     assert.strictEqual(res.error, 'Only an admin can do that.', op);
   }
   same([(book.plans || []).length, (book.packages || []).length, Object.keys(teachers)], [0, 0, ['Dee Ray']]);
-  // A new link replaces the old one; turning it off stops it.
+  // Show link gives the same link again (it keeps working); a new link replaces the old one; turning it off stops it.
+  const shown = as(admins.Caress, { op: 'showTeacherLink', name: 'Dee Ray' });
+  same([shown.ok, shown.newKey], [true, dee]);
+  assert.strictEqual(as(dee, { op: 'showTeacherLink', name: 'Dee Ray' }).error, 'Only an admin can do that.');
+  assert.strictEqual(as(dee, { op: 'today' }).role, 'teacher');
   const again = as(admins.Caress, { op: 'addTeacher', name: 'Dee Ray', replace: true });
   assert.notStrictEqual(again.newKey, dee);
   assert.strictEqual(as(dee, { op: 'today' }).status, 'needKey');
