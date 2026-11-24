@@ -481,10 +481,21 @@
 
   function whoHtml() {
     if (!state.who) return '';
-    if (key) return '<p class="muted small center" style="margin-top:14px">' + esc(state.who) + '\'s ' + state.role + ' link</p>';
+    // A link holder can move to Google sign-in (the link is then forgotten on this phone only).
+    if (key) return '<p class="muted small center" style="margin-top:14px">' + esc(state.who) + '\'s ' + state.role + ' link' +
+      (CLIENT_ID ? ' · <button class="linkish" id="usegoogle" type="button">Sign in with Google instead</button>' : '') + '</p>';
     return '<p class="muted small center" style="margin-top:14px">Signed in as ' + esc(state.who) + ' (' + state.role + ') · ' +
       '<button class="linkish" id="signout" type="button">Sign out</button></p>';
   }
+  app.addEventListener('click', function (e) {
+    if (!e.target.closest('#usegoogle')) return;
+    if (!confirm('Sign in with Google instead? This phone forgets the link, so your Google email needs to be on the Staff list (Team tab).')) return;
+    try { localStorage.removeItem(KEY_STORE); } catch (err) { /* fine */ }
+    key = '';
+    state.today = state.students = state.team = null;
+    state.role = state.who = '';
+    viewSignIn();
+  });
   // Sign out is drawn by whoHtml at the bottom of Today and Team.
   app.addEventListener('click', function (e) {
     if (!e.target.closest('#signout')) return;

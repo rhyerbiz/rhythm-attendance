@@ -128,9 +128,12 @@
   }
   var CHECK = '<div class="check" aria-hidden="true"><svg viewBox="0 0 52 52"><path d="M14 27 l8 8 l17 -18"/></svg></div>';
   // `res.staff`: they're on the studio's Staff tab, so they also get a way to the studio page.
+  // After a check-in the "I'm teaching" card carries it; elsewhere it's a button of its own.
   function notYou(res) {
-    return '<p class="foot">' + (res && res.staff ? '<a class="linkish" id="studio" href="' + esc(studioUrl({ hint: res.student.email })) + '">Studio page</a> · ' : '') +
-      '<button class="linkish" id="notyou">Not you? Switch person</button></p>';
+    var studio = res && res.staff && !(res.checkins && res.checkins.length)
+      ? '<div class="card center slim"><a class="btn secondary" id="studio" href="' + esc(studioUrl({ hint: res.student.email })) + '">Open the studio page</a></div>'
+      : '';
+    return studio + '<p class="foot"><button class="linkish" id="notyou">Not you? Switch person</button></p>';
   }
   function bindNotYou() {
     on('#notyou', 'click', function () { forgetMe(); viewRegister({}); });
@@ -179,6 +182,7 @@
         return '<a class="btn secondary" href="' + esc(studioUrl({ hint: res.student.email, teach: c.id, c: c.checkinId })) + '">I\'m teaching ' + esc(c.name) + '</a>';
       }).join('') +
       (hasStudioAccess() ? '' : '<p class="small muted" style="margin:10px 0 0">You\'ll sign in with Google once; your check-in is taken off.</p>') +
+      '<p class="small" style="margin:10px 0 0"><a class="muted" href="' + esc(studioUrl({ hint: res.student.email })) + '">Just open the studio page</a></p>' +
       '</div>';
   }
 
