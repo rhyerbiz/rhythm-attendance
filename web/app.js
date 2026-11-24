@@ -25,8 +25,10 @@
   // The studio page (owner.html) is on this same site, so this page can see whether the phone
   // holds a studio-page link or a Google sign-in from it. That's all it looks at: what such a
   // phone may do is still decided by the server, on the studio page.
+  // Only a Google sign-in counts: a phone holding an old studio-page link keeps the normal
+  // check-in (someone with an admin link whose phone forgot them still needs to check in).
   function hasStudioAccess() {
-    try { return !!(localStorage.getItem('rhythm.staffSession') || localStorage.getItem('rhythm.ownerKey')); } catch (e) { return false; }
+    try { return !!localStorage.getItem('rhythm.staffSession'); } catch (e) { return false; }
   }
   // `extra`: hint (the email to sign in with), teach (a ClassID to take attendance for), c (their
   // check-in to it). The email is handed over in sessionStorage, never in the address, so it

@@ -186,7 +186,7 @@ docs/TESTING.md          what a fellow student tries on the dev copy, and how to
     staff get `staff: true` (an "I'm teaching …" button → `owner.html?teach=<ClassID>&c=<checkinId>`
     → op `teaching`, which voids their own check-in to it). Schedule → `Teacher` (or Wix's staff on
     the session, `wixTeacher_`) makes `teaches_` skip their auto check-in: `status: 'teaching'`.
-    app.js sends a phone holding a studio-page session or link (same-origin localStorage) straight
+    app.js sends a phone holding a Google sign-in session (same-origin localStorage; not a link) straight
     to owner.html when no student is remembered. The sign-in email hint goes over in
     sessionStorage, never the URL. The name goes into Log → `By`
     on each check-in they make (blank = the student themselves; the Sheet menu writes the user's
